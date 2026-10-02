@@ -1,0 +1,107 @@
+import Link from "next/link";
+import type { JobStatus } from "@prisma/client";
+import { JobStatusBadge } from "@/components/job-status-badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { requireBusinessUser } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { formatDate } from "@/lib/format";
+import { JOB_STATUS_LABELS } from "@/lib/job-status";
+
+const FILTERS: { value: JobStatus | "ALL"; label: string }[] = [
+  { value: "ACTIVE", label: JOB_STATUS_LABELS.ACTIVE },
+  { value: "CLOSED", label: JOB_STATUS_LABELS.CLOSED },
+  { value: "ARCHIVED", label: JOB_STATUS_LABELS.ARCHIVED },
+  { value: "ALL", label: "All" },
+];
+
+export default async function JobsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string | string[] }>;
+}) {
+  const user = await requireBusinessUser();
+  const { status } = await searchParams;
+
+  const filter = FILTERS.find((item) => item.value === status)?.value ?? "ACTIVE";
+
+  const jobs = await db.job.findMany({
+    where: {
+      businessId: user.business.id,
+      ...(filter !== "ALL" && { status: filter }),
+    },
+    orderBy: { updatedAt: "desc" },
+    include: { _count: { select: { skills: true, submissions: true } } },
+  });
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Jobs</h1>
+        <Button asChild>
+          <Link href="/app/jobs/new">New job</Link>
+        </Button>
+      </div>
+
+      <div className="flex gap-2">
+        {FILTERS.map((item) => (
+          <Button
+            key={item.value}
+            asChild
+            size="sm"
+            variant={item.value === filter ? "default" : "outline"}
+          >
+            <Link href={item.value === "ACTIVE" ? "/app" : `/app?status=${item.value}`}>
+              {item.label}
+            </Link>
+          </Button>
+        ))}
+      </div>
+
+      {jobs.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No jobs found.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Title</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Skills</TableHead>
+              <TableHead>Submissions</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Updated</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {jobs.map((job) => (
+              <TableRow key={job.id}>
+                <TableCell className="whitespace-normal">
+                  <Link
+                    href={`/app/jobs/${job.id}`}
+                    className="font-medium underline-offset-4 hover:underline"
+                  >
+                    {job.title}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <JobStatusBadge status={job.status} />
+                </TableCell>
+                <TableCell>{job._count.skills}</TableCell>
+                <TableCell>{job._count.submissions}</TableCell>
+                <TableCell>{formatDate(job.createdAt)}</TableCell>
+                <TableCell>{formatDate(job.updatedAt)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}

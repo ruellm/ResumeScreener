@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  SUPERADMIN
+  BUSINESS
+}
+
+enum JobStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum SubmissionSource {
+  WEB
+  EMAIL
+  DRIVE
+}
+
+enum SubmissionStatus {
+  RECEIVED
+  QUEUED
+  EXTRACTING
+  EVALUATING
+  DONE
+  FAILED
+}
+
+enum ExtractionMethod {
+  TEXT
+  VISION
+}
+
+enum Verdict {
+  PASS
+  MAYBE
+  FAIL
+}
+
+// Single row, id is always 1.
+model Settings {
+  id                   Int      @id @default(1)
+  defaultRetentionDays Int      @default(180)
+  minRetentionDays     Int      @default(180)
+  maxRetentionDays     Int      @default(365)
+  maxFileSizeMb        Int      @default(10)
+  evalModel            String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Business {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  isActive         Boolean  @default(true)
+  // null = use Settings default
+  retentionDays    Int?
+  // null = unlimited
+  monthlyEvalLimit Int?
+  // null = unlimited
+  storageLimitMb   Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users          User[]
+  jobs           Job[]
+  allowedSenders AllowedSender[]
+  submissions    Submission[]
+}
+
+model User {
+  // Same id as the Supabase auth user.
+  id          String    @id @db.Uuid
+  email       String    @unique
+  name        String?
+  role        UserRole
+  // null for SUPERADMIN
+  businessId  String?
+  business    Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdJobs Job[]
+}
+
+model AllowedSender {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  // Stored lowercase.
+  email      String
+  createdAt  DateTime @default(now())
+
+  @@unique([businessId, email])
+}
+
+model Skill {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  category  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs JobSkill[]
+}
+
+model Job {
+  id                    String    @id @default(cuid())
+  businessId            String
+  business              Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  createdById           String    @db.Uuid
+  createdBy             User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  title                 String
+  roleOverview          String    @db.Text
+  requirements          String    @db.Text
+  idealCandidateProfile String    @db.Text
+  passingCriteria       String    @db.Text
+  postUrl               String?
+  postSnapshot          String?   @db.Text
+  postFetchedAt         DateTime?
+  status                JobStatus @default(ACTIVE)
+  // Short random code, generated in the app.
+  emailAlias            String    @unique
+  driveFolderId         String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  skills      JobSkill[]
+  submissions Submission[]
+
+  @@index([businessId, status])
+}
+
+model JobSkill {
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skillId    String
+  skill      Skill    @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  isRequired Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@id([jobId, skillId])
+}
+
+model Submission {
+  id                  String            @id @default(cuid())
+  jobId               String
+  job                 Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  businessId          String
+  business            Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  source              SubmissionSource
+  status              SubmissionStatus  @default(RECEIVED)
+  originalFilename    String
+  storageKey          String?
+  sha256              String
+  fileSizeBytes       Int
+  senderEmail         String?
+  emailMessageId      String?
+  driveFileId         String?
+  extractedText       String?           @db.Text
+  extractionMethod    ExtractionMethod?
+  // null = not assessed, [] = clean
+  hiddenTextFlagsJson Json?
+  error               String?           @db.Text
+  attempts            Int               @default(0)
+  receivedAt          DateTime          @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  evaluation Evaluation?
+
+  @@index([jobId, sha256])
+  @@index([jobId, receivedAt])
+  @@index([businessId, receivedAt])
+  @@index([driveFileId])
+}
+
+model Evaluation {
+  id                       String     @id @default(cuid())
+  submissionId             String     @unique
+  submission               Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  verdict                  Verdict
+  score                    Int
+  summary                  String     @db.Text
+  resultJson               Json
+  manipulationAttemptsJson Json?
+  model                    String
+  promptVersion            String
+  inputTokens              Int
+  outputTokens             Int
+  durationMs               Int
+  resultPdfKey             String?
+  createdAt                DateTime   @default(now())
+}
+
+// No foreign keys so rows survive a purge.
+model UsageRecord {
+  id            String           @id @default(cuid())
+  businessId    String
+  jobId         String
+  source        SubmissionSource
+  model         String
+  inputTokens   Int
+  outputTokens  Int
+  verdict       Verdict?
+  fileSizeBytes Int
+  createdAt     DateTime         @default(now())
+
+  @@index([businessId, createdAt])
+}
+
+model EventLog {
+  id         String   @id @default(cuid())
+  businessId String?
+  jobId      String?
+  type       String
+  message    String   @db.Text
+  metaJson   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([businessId, createdAt])
+  @@index([type, createdAt])
+}
