@@ -171,10 +171,18 @@ model Submission {
   driveFileId         String?
   extractedText       String?           @db.Text
   extractionMethod    ExtractionMethod?
+  // Counts and flags about the extraction. No resume content.
+  extractionMeta      Json?
   // null = not assessed, [] = clean
   hiddenTextFlagsJson Json?
+  // True when the extractor removed hidden text. Kept as a column so lists can filter on it.
+  hasHiddenText       Boolean           @default(false)
   error               String?           @db.Text
   attempts            Int               @default(0)
+  // Queue fields, used by the worker.
+  availableAt         DateTime          @default(now())
+  lockedUntil         DateTime?
+  lockedBy            String?
   receivedAt          DateTime          @default(now())
   completedAt         DateTime?
   createdAt           DateTime          @default(now())
@@ -186,6 +194,7 @@ model Submission {
   @@index([jobId, receivedAt])
   @@index([businessId, receivedAt])
   @@index([driveFileId])
+  @@index([status, availableAt])
 }
 
 model Evaluation {
@@ -197,10 +206,24 @@ model Evaluation {
   summary                  String     @db.Text
   resultJson               Json
   manipulationAttemptsJson Json?
+  // The job as the model saw it, so later job edits do not change old results.
+  jobSnapshotJson          Json
+  candidateName            String?
+  candidateEmail           String?
+  candidatePhone           String?
+  // False when the resume was read from page images and quotes could not be checked.
+  evidenceVerified         Boolean
+  // The resume tried to instruct the screener. verdict and score then hold
+  // FAIL and 0, and the two fields below hold what the model gave.
+  rejectedForManipulation  Boolean    @default(false)
+  preRejectionScore        Int?
+  preRejectionVerdict      Verdict?
   model                    String
   promptVersion            String
   inputTokens              Int
   outputTokens             Int
+  cacheCreationTokens      Int        @default(0)
+  cacheReadTokens          Int        @default(0)
   durationMs               Int
   resultPdfKey             String?
   createdAt                DateTime   @default(now())
@@ -208,16 +231,21 @@ model Evaluation {
 
 // No foreign keys so rows survive a purge.
 model UsageRecord {
-  id            String           @id @default(cuid())
-  businessId    String
-  jobId         String
-  source        SubmissionSource
-  model         String
-  inputTokens   Int
-  outputTokens  Int
-  verdict       Verdict?
-  fileSizeBytes Int
-  createdAt     DateTime         @default(now())
+  id                  String           @id @default(cuid())
+  businessId          String
+  jobId               String
+  source              SubmissionSource
+  model               String
+  inputTokens         Int
+  outputTokens        Int
+  cacheCreationTokens Int              @default(0)
+  cacheReadTokens     Int              @default(0)
+  durationMs          Int              @default(0)
+  // False when the API was called but the evaluation was not saved.
+  succeeded           Boolean          @default(true)
+  verdict             Verdict?
+  fileSizeBytes       Int
+  createdAt           DateTime         @default(now())
 
   @@index([businessId, createdAt])
 }

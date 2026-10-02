@@ -1,6 +1,5 @@
 "use server";
 
-import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { JobStatus } from "@prisma/client";
@@ -8,6 +7,7 @@ import { z } from "zod";
 import type { ActionResult } from "@/lib/action-result";
 import { requireBusinessUser } from "@/lib/auth";
 import { db, isUniqueViolation } from "@/lib/db";
+import { generateEmailAlias } from "@/lib/email-alias";
 import { logEvent } from "@/lib/events";
 import { jobInputSchema } from "@/lib/job-schema";
 import { JOB_STATUS_ACTIONS } from "@/lib/job-status";
@@ -19,18 +19,7 @@ const setJobStatusSchema = z.object({
   status: z.enum(JobStatus),
 });
 
-// No lookalike characters (0/o, 1/l/i).
-const ALIAS_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
-const ALIAS_LENGTH = 8;
 const ALIAS_ATTEMPTS = 5;
-
-function generateEmailAlias() {
-  let alias = "";
-  for (let i = 0; i < ALIAS_LENGTH; i++) {
-    alias += ALIAS_ALPHABET[randomInt(ALIAS_ALPHABET.length)];
-  }
-  return alias;
-}
 
 // New selections must be active. A skill already on the job may stay
 // after it was deactivated.

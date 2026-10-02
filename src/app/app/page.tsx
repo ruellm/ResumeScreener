@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { requireBusinessUser } from "@/lib/auth";
+import { verdictCounts } from "@/lib/dashboard";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { JOB_STATUS_LABELS } from "@/lib/job-status";
@@ -38,8 +39,17 @@ export default async function JobsPage({
       ...(filter !== "ALL" && { status: filter }),
     },
     orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { skills: true, submissions: true } } },
+    include: {
+      _count: {
+        select: {
+          skills: true,
+          // Uploads that were never confirmed are not submissions yet.
+          submissions: { where: { status: { not: "RECEIVED" } } },
+        },
+      },
+    },
   });
+  const verdicts = await verdictCounts(jobs.map((job) => job.id));
 
   return (
     <div className="grid gap-4">
@@ -75,6 +85,10 @@ export default async function JobsPage({
               <TableHead>Status</TableHead>
               <TableHead>Skills</TableHead>
               <TableHead>Submissions</TableHead>
+              <TableHead>Pass</TableHead>
+              <TableHead>Maybe</TableHead>
+              <TableHead>Fail</TableHead>
+              <TableHead>Rejected</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Updated</TableHead>
             </TableRow>
@@ -95,6 +109,10 @@ export default async function JobsPage({
                 </TableCell>
                 <TableCell>{job._count.skills}</TableCell>
                 <TableCell>{job._count.submissions}</TableCell>
+                <TableCell>{verdicts.get(job.id)?.pass}</TableCell>
+                <TableCell>{verdicts.get(job.id)?.maybe}</TableCell>
+                <TableCell>{verdicts.get(job.id)?.fail}</TableCell>
+                <TableCell>{verdicts.get(job.id)?.rejected}</TableCell>
                 <TableCell>{formatDate(job.createdAt)}</TableCell>
                 <TableCell>{formatDate(job.updatedAt)}</TableCell>
               </TableRow>

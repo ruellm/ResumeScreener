@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // pdfkit reads its own data files at runtime, which breaks when bundled.
+  serverExternalPackages: ["pdfkit"],
 };
 
 export default nextConfig;
