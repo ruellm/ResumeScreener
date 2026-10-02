@@ -9,9 +9,11 @@ import {
 import { log, workerEnv, workerId } from "./config";
 import { removeOrphanUploads } from "./orphans";
 import { processSubmission, recordFailure } from "./pipeline";
+import { describePurge, purgeIfDue } from "./purge";
 
 const SHUTDOWN_GRACE_MS = 30_000;
 const SWEEP_INTERVAL_MS = 10_000;
+const PURGE_CHECK_INTERVAL_MS = 60 * 60_000;
 
 const inFlight = new Set<Promise<void>>();
 const stop = new AbortController();
@@ -19,6 +21,8 @@ const stopped = new Promise<void>((resolve) => {
   stop.signal.addEventListener("abort", () => resolve());
 });
 let lastSweep = 0;
+let lastPurgeCheck = 0;
+let purgeTask: Promise<void> | null = null;
 
 function start(claim: Claim) {
   const task = processSubmission(claim)
@@ -44,6 +48,18 @@ async function sweep() {
   await removeOrphanUploads();
 }
 
+// Runs beside the queue so a long purge does not hold up evaluations.
+function checkPurge() {
+  if (purgeTask || Date.now() - lastPurgeCheck < PURGE_CHECK_INTERVAL_MS) return;
+  lastPurgeCheck = Date.now();
+  purgeTask = purgeIfDue({ signal: stop.signal })
+    .then((report) => log(report ? `purge: ${describePurge(report)}` : "purge: not due"))
+    .catch((error) => log(`purge error: ${describe(error)}`))
+    .finally(() => {
+      purgeTask = null;
+    });
+}
+
 async function idle(ms: number) {
   await sleep(ms, undefined, { signal: stop.signal }).catch(() => {});
 }
@@ -59,6 +75,7 @@ async function loop() {
     let claimed = 0;
     try {
       await sweep();
+      checkPurge();
       const claims = await claimSubmissions(free);
       // A signal may arrive while the claim is running. The rows are already
       // claimed, so they are processed and waited for like any other.
@@ -92,7 +109,7 @@ async function main() {
 
   const grace = new AbortController();
   const timedOut = await Promise.race([
-    Promise.all(inFlight).then(() => false),
+    Promise.all([...inFlight, purgeTask]).then(() => false),
     sleep(SHUTDOWN_GRACE_MS, true, { signal: grace.signal }).catch(() => false),
   ]);
   grace.abort();

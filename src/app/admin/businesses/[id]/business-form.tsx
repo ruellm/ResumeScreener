@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { RetentionConfirmDialog } from "@/components/retention-confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { PurgeImpact } from "@/lib/retention";
 import { updateBusiness } from "../../actions";
+
+type Values = Record<string, FormDataEntryValue | boolean | null>;
 
 type BusinessFormProps = {
   business: {
@@ -21,27 +25,41 @@ type BusinessFormProps = {
 
 export function BusinessForm({ business, retention }: BusinessFormProps) {
   const [error, setError] = useState<string>();
+  // The values waiting for the admin to confirm, with what they would delete.
+  const [confirm, setConfirm] = useState<{ values: Values; impact: PurgeImpact }>();
   const [pending, startTransition] = useTransition();
+
+  function save(values: Values, confirmed: boolean) {
+    startTransition(async () => {
+      const result = await updateBusiness({ ...values, id: business.id, confirmed });
+      if (!result.ok) {
+        setConfirm(undefined);
+        setError(result.error);
+        return;
+      }
+      if (result.confirm) {
+        setConfirm({ values, impact: result.confirm });
+        return;
+      }
+      setConfirm(undefined);
+      setError(undefined);
+      toast.success("Business saved");
+    });
+  }
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    startTransition(async () => {
-      const result = await updateBusiness({
-        id: business.id,
+    save(
+      {
         name: form.get("name"),
         isActive: form.get("isActive") === "on",
         retentionDays: form.get("retentionDays"),
         monthlyEvalLimit: form.get("monthlyEvalLimit"),
         storageLimitMb: form.get("storageLimitMb"),
-      });
-      if (result.ok) {
-        setError(undefined);
-        toast.success("Business saved");
-      } else {
-        setError(result.error);
-      }
-    });
+      },
+      false,
+    );
   }
 
   return (
@@ -107,6 +125,12 @@ export function BusinessForm({ business, retention }: BusinessFormProps) {
           {pending ? "Saving..." : "Save"}
         </Button>
       </div>
+      <RetentionConfirmDialog
+        impact={confirm?.impact}
+        pending={pending}
+        onConfirm={() => confirm && save(confirm.values, true)}
+        onCancel={() => setConfirm(undefined)}
+      />
     </form>
   );
 }

@@ -15,6 +15,7 @@ import { verdictCounts } from "@/lib/dashboard";
 import { db } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { JOB_STATUS_LABELS } from "@/lib/job-status";
+import { effectiveRetentionDays } from "@/lib/retention";
 
 const FILTERS: { value: JobStatus | "ALL"; label: string }[] = [
   { value: "ACTIVE", label: JOB_STATUS_LABELS.ACTIVE },
@@ -49,7 +50,11 @@ export default async function JobsPage({
       },
     },
   });
-  const verdicts = await verdictCounts(jobs.map((job) => job.id));
+  const [verdicts, settings] = await Promise.all([
+    verdictCounts(jobs.map((job) => job.id)),
+    db.settings.findUniqueOrThrow({ where: { id: 1 } }),
+  ]);
+  const retentionDays = effectiveRetentionDays(user.business, settings);
 
   return (
     <div className="grid gap-4">
@@ -120,6 +125,10 @@ export default async function JobsPage({
           </TableBody>
         </Table>
       )}
+
+      <p className="text-sm text-muted-foreground">
+        Resumes and results are deleted {retentionDays} days after they are received.
+      </p>
     </div>
   );
 }

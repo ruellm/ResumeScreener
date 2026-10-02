@@ -16,7 +16,8 @@
     "make-fixtures": "tsx scripts/make-fixtures.ts",
     "make-test-jobs": "tsx --conditions=react-server --env-file=.env scripts/make-test-jobs.ts",
     "upload-test": "tsx --conditions=react-server --env-file=.env scripts/upload-test.ts",
-    "show-extraction": "tsx --conditions=react-server --env-file=.env scripts/show-extraction.ts"
+    "show-extraction": "tsx --conditions=react-server --env-file=.env scripts/show-extraction.ts",
+    "purge": "tsx --conditions=react-server --env-file=.env scripts/purge.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -10,6 +10,7 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { db, isUniqueViolation } from "@/lib/db";
 import { serverEnv } from "@/lib/env.server";
 import { logEvent } from "@/lib/events";
+import { effectiveRetentionDays, shorteningImpact, type PurgeImpact } from "@/lib/retention";
 
 // Empty input means "not set".
 const optionalInt = z.preprocess(
@@ -36,6 +37,8 @@ const updateBusinessSchema = z.object({
   retentionDays: optionalInt,
   monthlyEvalLimit: optionalInt,
   storageLimitMb: optionalInt,
+  // Set once the admin has seen what a shorter retention deletes.
+  confirmed: z.boolean().default(false),
 });
 
 const addUserSchema = z.object({
@@ -90,17 +93,20 @@ export async function createBusiness(input: unknown): Promise<ActionResult> {
   redirect(`/admin/businesses/${businessId}`);
 }
 
-export async function updateBusiness(input: unknown): Promise<ActionResult> {
+// With confirm set, nothing was saved yet: the admin has to confirm first.
+export async function updateBusiness(
+  input: unknown,
+): Promise<ActionResult<{ confirm?: PurgeImpact }>> {
   const admin = await requireSuperAdmin();
 
   const parsed = updateBusinessSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
-  const { id, ...data } = parsed.data;
+  const { id, confirmed, ...data } = parsed.data;
 
+  const settings = await db.settings.findUniqueOrThrow({ where: { id: 1 } });
   if (data.retentionDays !== null) {
-    const settings = await db.settings.findUniqueOrThrow({ where: { id: 1 } });
     const { minRetentionDays, maxRetentionDays } = settings;
     if (
       data.retentionDays < minRetentionDays ||
@@ -115,6 +121,17 @@ export async function updateBusiness(input: unknown): Promise<ActionResult> {
 
   const existing = await db.business.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: "Business not found." };
+
+  if (!confirmed) {
+    const impact = await shorteningImpact([
+      {
+        businessId: id,
+        before: effectiveRetentionDays(existing, settings),
+        after: effectiveRetentionDays(data, settings),
+      },
+    ]);
+    if (impact) return { ok: true, confirm: impact };
+  }
 
   await db.business.update({ where: { id }, data });
 

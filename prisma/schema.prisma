@@ -47,14 +47,15 @@ enum Verdict {
 
 // Single row, id is always 1.
 model Settings {
-  id                   Int      @id @default(1)
-  defaultRetentionDays Int      @default(180)
-  minRetentionDays     Int      @default(180)
-  maxRetentionDays     Int      @default(365)
-  maxFileSizeMb        Int      @default(10)
+  id                   Int       @id @default(1)
+  defaultRetentionDays Int       @default(180)
+  minRetentionDays     Int       @default(180)
+  maxRetentionDays     Int       @default(365)
+  maxFileSizeMb        Int       @default(10)
   evalModel            String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  lastPurgeAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 model Business {

@@ -17,6 +17,7 @@ export default async function AdminLayout({
         links={[
           { href: "/admin", label: "Businesses" },
           { href: "/admin/skills", label: "Skills" },
+          { href: "/admin/settings", label: "Settings" },
         ]}
       />
       <main className="mx-auto max-w-5xl p-4">{children}</main>
