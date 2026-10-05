@@ -2,9 +2,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env.server";
 import { VERDICT_LABELS } from "@/lib/evaluation-result";
-import { storeResultPdf } from "@/lib/result-pdf/store";
-import { RESULTS_BUCKET } from "@/lib/storage-keys";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { loadResultPdf } from "@/lib/result-pdf/store";
 import { log } from "../config";
 import type { Mailbox } from "./mailbox";
 import { REASONS, type SkippedFile } from "./reasons";
@@ -92,17 +90,6 @@ function readSkipped(json: unknown): SkippedFile[] {
   );
 }
 
-async function resultPdf(submissionId: string, storedKey: string | null) {
-  const bucket = supabaseAdmin.storage.from(RESULTS_BUCKET);
-  let file = storedKey ? await bucket.download(storedKey) : null;
-  if (!file?.data) {
-    // Never rendered, or the stored object is gone. Make it now.
-    file = await bucket.download(await storeResultPdf(submissionId));
-  }
-  if (!file.data) throw new Error(`Result PDF download failed: ${file.error.message}`);
-  return Buffer.from(await file.data.arrayBuffer());
-}
-
 type Row = {
   id: string;
   jobId: string | null;
@@ -174,7 +161,7 @@ async function resultsBody(row: Row): Promise<Body | null> {
   for (const submission of done) {
     attachments.push({
       filename: `${submission.originalFilename.replace(/\.pdf$/i, "")}_RESULTS.pdf`,
-      content: await resultPdf(submission.id, submission.evaluation.resultPdfKey),
+      content: await loadResultPdf(submission.id, submission.evaluation.resultPdfKey),
     });
   }
   const totalBytes = attachments.reduce((sum, file) => sum + file.content.length, 0);

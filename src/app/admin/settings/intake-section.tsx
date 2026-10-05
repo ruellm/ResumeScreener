@@ -4,48 +4,58 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { setEmailIntake } from "./actions";
+import type { ActionResult } from "@/lib/action-result";
 
-type EmailIntakeSectionProps = {
+type IntakeSectionProps = {
+  id: string;
+  title: string;
+  label: string;
   enabled: boolean;
-  // When intake was first switched on. Older mail is never read.
-  since: string | null;
   googleConnected: boolean;
+  setEnabled: (input: { enabled: boolean }) => Promise<ActionResult>;
+  children?: React.ReactNode;
 };
 
-export function EmailIntakeSection({ enabled, since, googleConnected }: EmailIntakeSectionProps) {
+// One on/off switch for a way resumes come in through the Google account.
+export function IntakeSection({
+  id,
+  title,
+  label,
+  enabled,
+  googleConnected,
+  setEnabled,
+  children,
+}: IntakeSectionProps) {
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
 
   function onChange(next: boolean) {
     startTransition(async () => {
-      const result = await setEmailIntake({ enabled: next });
+      const result = await setEnabled({ enabled: next });
       setError(result.ok ? undefined : result.error);
-      if (result.ok) toast.success(next ? "Email intake is on" : "Email intake is off");
+      if (result.ok) toast.success(`${title} is ${next ? "on" : "off"}`);
     });
   }
 
   return (
     <section className="grid max-w-md gap-3">
-      <h2 className="text-lg font-semibold">Email intake</h2>
+      <h2 className="text-lg font-semibold">{title}</h2>
       <div className="flex items-center gap-3">
         <Switch
-          id="email-intake"
+          id={id}
           checked={enabled}
           // Switching off always works, so a broken connection cannot lock it on.
           disabled={pending || (!enabled && !googleConnected)}
           onCheckedChange={onChange}
         />
-        <Label htmlFor="email-intake">Read resumes sent by email</Label>
+        <Label htmlFor={id}>{label}</Label>
       </div>
       {!googleConnected && (
         <p className="text-sm text-muted-foreground">
-          Connect the Google account below first. Mail is not checked while it is disconnected.
+          Connect the Google account below first. Nothing is read while it is disconnected.
         </p>
       )}
-      {since && (
-        <p className="text-sm text-muted-foreground">Mail received before {since} is not read.</p>
-      )}
+      <div className="grid gap-1 text-sm text-muted-foreground">{children}</div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

@@ -7,13 +7,9 @@ import type { ActionResult } from "@/lib/action-result";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
+import { removeDeletedSubmissionFromDrive } from "@/lib/google/drive-cleanup";
 import { requireJob } from "@/lib/job-access";
-import {
-  RESULTS_BUCKET,
-  RESUMES_BUCKET,
-  resultPdfStorageKey,
-  resumeStorageKey,
-} from "@/lib/storage-keys";
+import { RESULTS_BUCKET, RESUMES_BUCKET, resumeStorageKey } from "@/lib/storage-keys";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { JOB_CLOSED_MESSAGE } from "@/lib/uploads";
 import { monthlyLimitExceeded } from "@/lib/usage";
@@ -98,7 +94,11 @@ export async function deleteSubmission(input: unknown): Promise<ActionResult> {
   const { user, job } = await requireJob(jobId);
   const submission = await db.submission.findFirst({
     where: { id: submissionId, jobId: job.id },
-    select: { id: true },
+    select: {
+      id: true,
+      driveFileId: true,
+      evaluation: { select: { resultPdfKey: true, resultDriveFileId: true } },
+    },
   });
   if (!submission) notFound();
 
@@ -116,13 +116,18 @@ export async function deleteSubmission(input: unknown): Promise<ActionResult> {
   }
 
   const keyParts = { businessId: job.businessId, jobId: job.id, submissionId: submission.id };
+  const resultKey = submission.evaluation?.resultPdfKey;
   const [resume, result] = await Promise.all([
     supabaseAdmin.storage.from(RESUMES_BUCKET).remove([resumeStorageKey(keyParts)]),
-    supabaseAdmin.storage.from(RESULTS_BUCKET).remove([resultPdfStorageKey(keyParts)]),
+    resultKey ? supabaseAdmin.storage.from(RESULTS_BUCKET).remove([resultKey]) : null,
   ]);
-  if (resume.error || result.error) {
-    console.error("files of a deleted submission were not removed", resume.error, result.error);
+  if (resume.error || result?.error) {
+    console.error("files of a deleted submission were not removed", resume.error, result?.error);
   }
+  await removeDeletedSubmissionFromDrive({
+    driveFileId: submission.driveFileId,
+    resultDriveFileId: submission.evaluation?.resultDriveFileId ?? null,
+  });
 
   await logEvent({
     type: "submission.deleted",

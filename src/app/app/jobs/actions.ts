@@ -9,6 +9,7 @@ import { requireBusinessUser } from "@/lib/auth";
 import { db, isUniqueViolation } from "@/lib/db";
 import { generateEmailAlias } from "@/lib/email-alias";
 import { logEvent } from "@/lib/events";
+import { syncJobFolder } from "@/lib/google/drive-folders";
 import { jobInputSchema } from "@/lib/job-schema";
 import { JOB_STATUS_ACTIONS } from "@/lib/job-status";
 
@@ -87,6 +88,7 @@ export async function createJob(input: unknown): Promise<ActionResult> {
     jobId,
     meta: { actorId: user.id },
   });
+  await syncJobFolder(jobId);
 
   revalidatePath("/app");
   redirect(`/app/jobs/${jobId}`);
@@ -131,6 +133,7 @@ export async function updateJob(input: unknown): Promise<ActionResult> {
     jobId: id,
     meta: { actorId: user.id },
   });
+  await syncJobFolder(id);
 
   revalidatePath("/app");
   revalidatePath(`/app/jobs/${id}`);

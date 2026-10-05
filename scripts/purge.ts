@@ -21,6 +21,7 @@ async function main() {
   }
   console.log(`Old event log rows: ${report.events} ${dryRun ? "to delete" : "deleted"}`);
   console.log(`Old email records: ${report.emails} ${dryRun ? "to delete" : "deleted"}`);
+  console.log(`Old Drive records: ${report.driveItems} ${dryRun ? "to delete" : "deleted"}`);
 }
 
 main()

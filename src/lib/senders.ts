@@ -70,6 +70,15 @@ export async function addSender(
   return parsed;
 }
 
+// Drive folders are shared with single addresses, so a domain entry does not count here.
+export async function isAllowedEmailSender(businessId: string, address: string) {
+  const match = await db.allowedSender.findFirst({
+    where: { businessId, kind: "email", value: normalizeGmail(address) },
+    select: { id: true },
+  });
+  return match !== null;
+}
+
 // Only checks the list. Whether the mail really came from that address is checked elsewhere.
 export async function isAllowedSender(businessId: string, fromAddress: string) {
   const address = fromAddress.trim().toLowerCase();

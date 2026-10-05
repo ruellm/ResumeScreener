@@ -10,6 +10,7 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { db, isUniqueViolation } from "@/lib/db";
 import { serverEnv } from "@/lib/env.server";
 import { logEvent } from "@/lib/events";
+import { syncBusinessFolder } from "@/lib/google/drive-folders";
 import { effectiveRetentionDays, shorteningImpact, type PurgeImpact } from "@/lib/retention";
 
 // Empty input means "not set".
@@ -134,6 +135,7 @@ export async function updateBusiness(
   }
 
   await db.business.update({ where: { id }, data });
+  if (data.name !== existing.name) await syncBusinessFolder(id);
 
   await logEvent({
     type: "business.updated",

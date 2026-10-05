@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { CopyButton } from "@/components/copy-button";
+import { LastCheck } from "./job-intake";
 
 type EmailIntakeProps = {
+  // The admin switch. The address is shown either way, so it can be handed out early.
+  enabled: boolean;
   accepting: boolean;
   address: string;
   mailbox: string;
@@ -11,6 +14,7 @@ type EmailIntakeProps = {
 };
 
 export function EmailIntake({
+  enabled,
   accepting,
   address,
   mailbox,
@@ -51,6 +55,11 @@ export function EmailIntake({
         Attach PDF resumes, up to {maxFileSizeMb} MB each. Results are emailed back to the
         sender.
       </p>
+      {enabled ? (
+        <LastCheck kind="email" />
+      ) : (
+        <p className="text-sm text-muted-foreground">Email intake is not enabled yet.</p>
+      )}
     </div>
   );
 }

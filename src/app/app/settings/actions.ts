@@ -11,6 +11,11 @@ import { addSender } from "@/lib/senders";
 const addSchema = z.object({ entry: z.string().trim().min(1).max(320) });
 const removeSchema = z.object({ id: z.string().min(1) });
 
+// The worker then brings the Drive folder's sharing in line with the list.
+function flagDriveSync(businessId: string) {
+  return db.business.update({ where: { id: businessId }, data: { driveSyncNeeded: true } });
+}
+
 export async function addAllowedSender(input: unknown): Promise<ActionResult> {
   const user = await requireBusinessUser();
 
@@ -23,6 +28,7 @@ export async function addAllowedSender(input: unknown): Promise<ActionResult> {
   if (!result.ok) return result;
 
   const { kind, value } = result.sender;
+  await flagDriveSync(user.business.id);
   await logEvent({
     type: "sender.added",
     message: `Allowed sender added: ${value}`,
@@ -47,6 +53,7 @@ export async function removeAllowedSender(input: unknown): Promise<ActionResult>
   if (!sender) return { ok: false, error: "That sender is no longer on the list." };
 
   await db.allowedSender.delete({ where: { id: sender.id } });
+  await flagDriveSync(user.business.id);
   await logEvent({
     type: "sender.removed",
     message: `Allowed sender removed: ${sender.value}`,

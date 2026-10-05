@@ -4,6 +4,7 @@ import { serverEnv } from "@/lib/env.server";
 import { GOOGLE_CONNECTION_ID } from "@/lib/google/oauth";
 import { getSystemAuth, GoogleNotConnectedError } from "@/lib/google/system-auth";
 import { log, workerEnv } from "../config";
+import { recordPoll } from "../heartbeat";
 import { createMailbox, type Mailbox } from "./mailbox";
 import { pollMailbox } from "./poller";
 import { dueReplies, sendReply } from "./reply";
@@ -62,6 +63,7 @@ async function run(pollDue: boolean) {
       since: settings.emailIntakeSince!,
       systemAccount: serverEnv.GOOGLE_SYSTEM_ACCOUNT,
     });
+    await recordPoll("mail");
   }
 }
 

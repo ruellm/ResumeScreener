@@ -24,7 +24,7 @@ import {
 } from "@/lib/dashboard";
 import { REJECTION_TITLE } from "@/lib/evaluation-result";
 import { formatDateTime } from "@/lib/format";
-import { SUBMISSION_STATUS_LABELS } from "@/lib/uploads";
+import { SOURCE_LABELS, SUBMISSION_STATUS_LABELS } from "@/lib/uploads";
 import { DeleteSubmissionButton } from "./delete-submission-button";
 
 const REFRESH_MS = 10_000;
@@ -205,7 +205,7 @@ export async function DashboardTab({ jobId, query }: DashboardTabProps) {
             {rows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell>{formatDateTime(row.receivedAt)}</TableCell>
-                <TableCell>{row.source}</TableCell>
+                <TableCell>{SOURCE_LABELS[row.source]}</TableCell>
                 <TableCell className="whitespace-normal">{row.originalFilename}</TableCell>
                 <TableCell>{row.evaluation?.candidateName}</TableCell>
                 <TableCell>

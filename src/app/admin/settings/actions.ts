@@ -7,6 +7,8 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 import { disconnect, testConnection, type GoogleTestResult } from "@/lib/google/connect";
+import { getDrive } from "@/lib/google/drive";
+import { ROOT_FOLDER_NAME } from "@/lib/google/drive-folders";
 import { GOOGLE_CONNECTION_ID } from "@/lib/google/oauth";
 import { effectiveRetentionDays, shorteningImpact, type PurgeImpact } from "@/lib/retention";
 import { settingsInputSchema } from "@/lib/settings-schema";
@@ -80,12 +82,12 @@ export async function testGoogleConnection(): Promise<ActionResult<{ result: Goo
   }
 }
 
-const emailIntakeSchema = z.object({ enabled: z.boolean() });
+const intakeSchema = z.object({ enabled: z.boolean() });
 
 export async function setEmailIntake(input: unknown): Promise<ActionResult> {
   const admin = await requireSuperAdmin();
 
-  const parsed = emailIntakeSchema.safeParse(input);
+  const parsed = intakeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid request." };
   const { enabled } = parsed.data;
 
@@ -115,6 +117,59 @@ export async function setEmailIntake(input: unknown): Promise<ActionResult> {
       actorId: admin.id,
       before: { emailIntakeEnabled: settings.emailIntakeEnabled },
       after: { emailIntakeEnabled: enabled },
+    },
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+export async function setDriveIntake(input: unknown): Promise<ActionResult> {
+  const admin = await requireSuperAdmin();
+
+  const parsed = intakeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid request." };
+  const { enabled } = parsed.data;
+
+  const [settings, connection] = await Promise.all([
+    db.settings.findUniqueOrThrow({ where: { id: 1 } }),
+    db.googleConnection.findUnique({
+      where: { id: GOOGLE_CONNECTION_ID },
+      select: { status: true },
+    }),
+  ]);
+  if (settings.driveIntakeEnabled === enabled) return { ok: true };
+  if (enabled && connection?.status !== "ok") {
+    return { ok: false, error: "Connect the Google account before turning Drive intake on." };
+  }
+
+  let { driveRootFolderId, driveChangesPageToken } = settings;
+  if (enabled) {
+    try {
+      const drive = await getDrive();
+      driveRootFolderId ??= await drive.createFolder(ROOT_FOLDER_NAME, null);
+      // Only files added from now on are read.
+      driveChangesPageToken ??= await drive.getStartPageToken();
+    } catch (error) {
+      console.error("Drive intake setup failed:", error instanceof Error ? error.message : error);
+      return { ok: false, error: "Google Drive could not be set up. Test the connection and try again." };
+    }
+  }
+
+  await db.settings.update({
+    where: { id: 1 },
+    data: { driveIntakeEnabled: enabled, driveRootFolderId, driveChangesPageToken },
+  });
+  // The worker creates the folders of existing jobs and shares them.
+  if (enabled) await db.business.updateMany({ data: { driveSyncNeeded: true } });
+
+  await logEvent({
+    type: "settings.updated",
+    message: "Settings updated",
+    meta: {
+      actorId: admin.id,
+      before: { driveIntakeEnabled: settings.driveIntakeEnabled },
+      after: { driveIntakeEnabled: enabled },
     },
   });
 

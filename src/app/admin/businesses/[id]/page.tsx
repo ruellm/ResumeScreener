@@ -11,6 +11,7 @@ import {
 import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { folderUrl } from "@/lib/google/drive";
 import { BusinessForm } from "./business-form";
 import { UsersSection } from "./users-section";
 
@@ -45,6 +46,18 @@ export default async function BusinessPage({
         </Link>
         <h1 className="text-xl font-semibold">{business.name}</h1>
         <p className="text-sm text-muted-foreground">Slug: {business.slug}</p>
+        {business.driveFolderId && (
+          <p className="text-sm">
+            <a
+              href={folderUrl(business.driveFolderId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-4"
+            >
+              Google Drive folder
+            </a>
+          </p>
+        )}
       </div>
 
       <BusinessForm

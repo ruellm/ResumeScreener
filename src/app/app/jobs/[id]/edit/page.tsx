@@ -29,7 +29,10 @@ export default async function EditJobPage({
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: { id: true, name: true, category: true },
     }),
-    db.settings.findUniqueOrThrow({ where: { id: 1 }, select: { maxFileSizeMb: true } }),
+    db.settings.findUniqueOrThrow({
+      where: { id: 1 },
+      select: { maxFileSizeMb: true, emailIntakeEnabled: true },
+    }),
     db.allowedSender.count({ where: { businessId: user.business.id } }),
   ]);
   if (!job) notFound();
@@ -58,6 +61,7 @@ export default async function EditJobPage({
         }}
         emailIntake={
           <EmailIntake
+            enabled={settings.emailIntakeEnabled}
             accepting={job.status === "ACTIVE"}
             address={intakeAddress(job.emailAlias)}
             mailbox={intakeMailbox()}

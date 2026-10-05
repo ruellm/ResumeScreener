@@ -21,9 +21,28 @@ type SenderRow = {
   kind: string;
   addedBy: string | null;
   addedOn: string;
+  driveStatus: string | null;
+  driveError: string | null;
 };
 
-export function SendersSection({ senders, max }: { senders: SenderRow[]; max: number }) {
+function DriveStatus({ sender, enabled }: { sender: SenderRow; enabled: boolean }) {
+  // A folder is shared with people, never with a whole domain.
+  if (sender.kind === "domain") return <>Email only</>;
+  if (sender.driveStatus === "shared") return <>Shared</>;
+  if (sender.driveStatus === "needs_google_account") return <>Needs a Google account</>;
+  if (sender.driveStatus === "error") {
+    return (
+      <span className="text-destructive underline decoration-dotted" title={sender.driveError ?? undefined}>
+        Error
+      </span>
+    );
+  }
+  return <span className="text-muted-foreground">{enabled ? "Not shared yet" : "Off"}</span>;
+}
+
+type SendersSectionProps = { senders: SenderRow[]; max: number; driveEnabled: boolean };
+
+export function SendersSection({ senders, max, driveEnabled }: SendersSectionProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -63,6 +82,7 @@ export function SendersSection({ senders, max }: { senders: SenderRow[]; max: nu
               <TableHead>Type</TableHead>
               <TableHead>Added by</TableHead>
               <TableHead>Added on</TableHead>
+              <TableHead>Drive</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -73,6 +93,9 @@ export function SendersSection({ senders, max }: { senders: SenderRow[]; max: nu
                 <TableCell>{sender.kind === "domain" ? "Domain" : "Email"}</TableCell>
                 <TableCell>{sender.addedBy ?? "Unknown"}</TableCell>
                 <TableCell>{sender.addedOn}</TableCell>
+                <TableCell>
+                  <DriveStatus sender={sender} enabled={driveEnabled} />
+                </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
                     <Button

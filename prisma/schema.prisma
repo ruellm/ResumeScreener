@@ -47,18 +47,28 @@ enum Verdict {
 
 // Single row, id is always 1.
 model Settings {
-  id                   Int       @id @default(1)
-  defaultRetentionDays Int       @default(180)
-  minRetentionDays     Int       @default(180)
-  maxRetentionDays     Int       @default(365)
-  maxFileSizeMb        Int       @default(10)
-  evalModel            String
-  lastPurgeAt          DateTime?
-  emailIntakeEnabled   Boolean   @default(false)
+  id                    Int       @id @default(1)
+  defaultRetentionDays  Int       @default(180)
+  minRetentionDays      Int       @default(180)
+  maxRetentionDays      Int       @default(365)
+  maxFileSizeMb         Int       @default(10)
+  evalModel             String
+  lastPurgeAt           DateTime?
+  emailIntakeEnabled    Boolean   @default(false)
   // Mail received before this is never picked up.
-  emailIntakeSince     DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  emailIntakeSince      DateTime?
+  driveIntakeEnabled    Boolean   @default(false)
+  // The "Resume Screener" folder in the system account's Drive.
+  driveRootFolderId     String?
+  // Where the next read of Drive changes starts.
+  driveChangesPageToken String?
+  // Heartbeat: when the worker was last alive and last finished each poll.
+  workerSeenAt          DateTime?
+  lastMailPollAt        DateTime?
+  lastDrivePollAt       DateTime?
+  driveLastAuditAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 model Business {
@@ -72,6 +82,9 @@ model Business {
   monthlyEvalLimit Int?
   // null = unlimited
   storageLimitMb   Int?
+  driveFolderId    String?
+  // Set when the allowed senders change. The worker then updates the folder's sharing.
+  driveSyncNeeded  Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -99,17 +112,21 @@ model User {
 }
 
 model AllowedSender {
-  id          String   @id @default(cuid())
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  businessId        String
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   // "email" or "domain"
-  kind        String
+  kind              String
   // Normalized. Matching is done on this.
-  value       String
+  value             String
   // As typed.
-  display     String
-  createdById String
-  createdAt   DateTime @default(now())
+  display           String
+  createdById       String
+  // "shared", "needs_google_account" or "error". null = not shared (yet).
+  driveStatus       String?
+  drivePermissionId String?
+  driveError        String?
+  createdAt         DateTime @default(now())
 
   @@unique([businessId, kind, value])
 }
@@ -238,6 +255,9 @@ model Evaluation {
   cacheReadTokens          Int        @default(0)
   durationMs               Int
   resultPdfKey             String?
+  // The copy of the result PDF in the job's Drive folder. null = not written yet.
+  resultDriveFileId        String?
+  driveWriteAttempts       Int        @default(0)
   createdAt                DateTime   @default(now())
 }
 
@@ -319,4 +339,24 @@ model InboundEmail {
 
   @@index([businessId, createdAt])
   @@index([status, replySentAt])
+}
+
+// One row per file seen in a job's Drive folder. Inserting the row is the claim.
+model DriveIntakeItem {
+  id              String   @id @default(cuid())
+  driveFileId     String   @unique
+  jobId           String
+  businessId      String
+  fileName        String
+  uploaderEmail   String?
+  // "processing", "accepted", "skipped" or "error"
+  status          String
+  reason          String?
+  submissionId    String?
+  // The _SKIPPED.txt or _FAILED.txt written next to the file.
+  noteDriveFileId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([businessId, createdAt])
 }

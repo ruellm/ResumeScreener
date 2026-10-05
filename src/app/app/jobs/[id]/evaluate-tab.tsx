@@ -28,12 +28,14 @@ import {
   fileError,
   JOB_CLOSED_MESSAGE,
   MAX_FILES_PER_BATCH,
+  SOURCE_LABELS,
   SUBMISSION_STATUS_LABELS,
   type PreparedFile,
   type SubmissionStatusRow,
 } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
 import { confirmUpload, prepareUploads } from "../upload-actions";
+import { IntakeActivity, useJobIntake, WorkerOfflineWarning } from "./job-intake";
 import { useShowTab } from "./job-tabs";
 
 const PARALLEL_UPLOADS = 3;
@@ -102,6 +104,7 @@ type EvaluateTabProps = {
 export function EvaluateTab({ jobId, active, maxFileSizeMb, usage, recent }: EvaluateTabProps) {
   const router = useRouter();
   const showTab = useShowTab();
+  const refreshIntake = useJobIntake()?.refresh;
   const inputRef = useRef<HTMLInputElement>(null);
   const [items, setItems] = useState<Item[]>([]);
   // The list is seeded once from the page load. After that polling keeps it
@@ -314,13 +317,16 @@ export function EvaluateTab({ jobId, active, maxFileSizeMb, usage, recent }: Eva
       });
       // Finished evaluations change the monthly usage shown above.
       if (fetched.some((row) => row.status === "DONE")) router.refresh();
+      // While work is going on, the email and Drive list keeps up too.
+      void refreshIntake?.();
     }, POLL_MS);
 
     return () => clearInterval(timer);
-  }, [pendingIds, jobId, router]);
+  }, [pendingIds, jobId, router, refreshIntake]);
 
   return (
     <div className="grid gap-6">
+      <WorkerOfflineWarning />
       {!active && <p className="text-muted-foreground">{JOB_CLOSED_MESSAGE}</p>}
 
       {active && usage && (
@@ -382,6 +388,7 @@ export function EvaluateTab({ jobId, active, maxFileSizeMb, usage, recent }: Eva
             <TableHeader>
               <TableRow>
                 <TableHead>File</TableHead>
+                <TableHead>Source</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Candidate</TableHead>
                 <TableHead>Verdict</TableHead>
@@ -403,6 +410,8 @@ export function EvaluateTab({ jobId, active, maxFileSizeMb, usage, recent }: Eva
                       name
                     )}
                   </TableCell>
+                  {/* A file picked on this visit has no server row until it is uploaded. */}
+                  <TableCell>{SOURCE_LABELS[server?.source ?? "WEB"]}</TableCell>
                   <TableCell className="whitespace-normal">
                     {status}
                     {error && <span className="block text-xs text-destructive">{error}</span>}
@@ -432,6 +441,8 @@ export function EvaluateTab({ jobId, active, maxFileSizeMb, usage, recent }: Eva
           </a>
         </div>
       </section>
+
+      <IntakeActivity />
 
       <Dialog
         open={duplicates.length > 0}

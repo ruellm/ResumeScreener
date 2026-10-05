@@ -7,12 +7,17 @@ import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { intakeAddress, intakeMailbox, intakeSubjectCode } from "@/lib/email-intake";
+import { folderUrl } from "@/lib/google/drive";
 import { formatDateTime } from "@/lib/format";
+import { jobIntakeActivity } from "@/lib/intake-activity";
+import { heartbeatSelect, toIntakeStatus } from "@/lib/intake-status";
 import { statusRowSelect, toStatusRow } from "@/lib/submission-status";
 import { countEvaluationsThisMonth } from "@/lib/usage";
 import { DashboardTab } from "./dashboard-tab";
+import { DriveIntake } from "./drive-intake";
 import { EmailIntake } from "./email-intake";
 import { EvaluateTab } from "./evaluate-tab";
+import { JobIntakeProvider } from "./job-intake";
 import { JobTabs } from "./job-tabs";
 import { StatusButtons } from "./status-buttons";
 
@@ -52,10 +57,14 @@ export default async function JobPage({
   if (!job) notFound();
 
   const { monthlyEvalLimit } = user.business;
-  const [settings, used, senderCount, recent] = await Promise.all([
-    db.settings.findUniqueOrThrow({ where: { id: 1 }, select: { maxFileSizeMb: true } }),
+  const [settings, used, senderCount, activity, recent] = await Promise.all([
+    db.settings.findUniqueOrThrow({
+      where: { id: 1 },
+      select: { maxFileSizeMb: true, ...heartbeatSelect },
+    }),
     monthlyEvalLimit === null ? null : countEvaluationsThisMonth(user.business.id),
     db.allowedSender.count({ where: { businessId: user.business.id } }),
+    jobIntakeActivity(job.id, user.business.id),
     // RECEIVED rows are uploads that were not confirmed, so they are left out.
     db.submission.findMany({
       where: { jobId: job.id, status: { not: "RECEIVED" } },
@@ -91,97 +100,112 @@ export default async function JobPage({
         </div>
       </div>
 
-      <JobTabs initialTab={typeof tab === "string" && TABS.includes(tab) ? tab : "details"}>
-        <TabsList>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="evaluate">Evaluate</TabsTrigger>
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-        </TabsList>
+      <JobIntakeProvider
+        jobId={job.id}
+        status={toIntakeStatus(settings)}
+        activity={activity}
+        renderedAt={Date.now()}
+      >
+        <JobTabs initialTab={typeof tab === "string" && TABS.includes(tab) ? tab : "details"}>
+          <TabsList>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="evaluate">Evaluate</TabsTrigger>
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="details" className="grid gap-6 pt-2">
-          <Section title="Role overview">
-            <p className="whitespace-pre-wrap">{job.roleOverview}</p>
-          </Section>
-          <Section title="Requirements">
-            <p className="whitespace-pre-wrap">{job.requirements}</p>
-          </Section>
-          <Section title="Ideal candidate profile">
-            <p className="whitespace-pre-wrap">{job.idealCandidateProfile}</p>
-          </Section>
-          <Section title="Passing criteria">
-            <p className="whitespace-pre-wrap">{job.passingCriteria}</p>
-          </Section>
-          <Section title="Skills">
-            {job.skills.length === 0 ? (
-              <p className="text-muted-foreground">No skills.</p>
-            ) : (
-              <ul className="grid gap-1">
-                {job.skills.map(({ skill, isRequired }) => (
-                  <li key={skill.id} className="flex flex-wrap items-center gap-2">
-                    <span>{skill.name}</span>
-                    <span className="text-muted-foreground">{skill.category}</span>
-                    {isRequired && <Badge variant="outline">Required</Badge>}
-                    {!skill.isActive && <Badge variant="secondary">Inactive</Badge>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-          <Section title="Job post URL">
-            {job.postUrl ? (
-              <a
-                href={job.postUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="break-all underline underline-offset-4"
-              >
-                {job.postUrl}
-              </a>
-            ) : (
-              <p className="text-muted-foreground">Not set.</p>
-            )}
-          </Section>
-          <Section title="Email intake">
-            <EmailIntake
-              accepting={job.status === "ACTIVE"}
-              address={intakeAddress(job.emailAlias)}
-              mailbox={intakeMailbox()}
-              subjectCode={intakeSubjectCode(job.emailAlias)}
+          <TabsContent value="details" className="grid gap-6 pt-2">
+            <Section title="Role overview">
+              <p className="whitespace-pre-wrap">{job.roleOverview}</p>
+            </Section>
+            <Section title="Requirements">
+              <p className="whitespace-pre-wrap">{job.requirements}</p>
+            </Section>
+            <Section title="Ideal candidate profile">
+              <p className="whitespace-pre-wrap">{job.idealCandidateProfile}</p>
+            </Section>
+            <Section title="Passing criteria">
+              <p className="whitespace-pre-wrap">{job.passingCriteria}</p>
+            </Section>
+            <Section title="Skills">
+              {job.skills.length === 0 ? (
+                <p className="text-muted-foreground">No skills.</p>
+              ) : (
+                <ul className="grid gap-1">
+                  {job.skills.map(({ skill, isRequired }) => (
+                    <li key={skill.id} className="flex flex-wrap items-center gap-2">
+                      <span>{skill.name}</span>
+                      <span className="text-muted-foreground">{skill.category}</span>
+                      {isRequired && <Badge variant="outline">Required</Badge>}
+                      {!skill.isActive && <Badge variant="secondary">Inactive</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+            <Section title="Job post URL">
+              {job.postUrl ? (
+                <a
+                  href={job.postUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all underline underline-offset-4"
+                >
+                  {job.postUrl}
+                </a>
+              ) : (
+                <p className="text-muted-foreground">Not set.</p>
+              )}
+            </Section>
+            <Section title="Email intake">
+              <EmailIntake
+                enabled={settings.emailIntakeEnabled}
+                accepting={job.status === "ACTIVE"}
+                address={intakeAddress(job.emailAlias)}
+                mailbox={intakeMailbox()}
+                subjectCode={intakeSubjectCode(job.emailAlias)}
+                maxFileSizeMb={settings.maxFileSizeMb}
+                hasSenders={senderCount > 0}
+              />
+            </Section>
+            <Section title="Google Drive intake">
+              <DriveIntake
+                enabled={settings.driveIntakeEnabled}
+                accepting={job.status === "ACTIVE"}
+                folderUrl={job.driveFolderId ? folderUrl(job.driveFolderId) : null}
+              />
+            </Section>
+            <Section title="Created">
+              <p>{formatDateTime(job.createdAt)}</p>
+            </Section>
+            <Section title="Updated">
+              <p>{formatDateTime(job.updatedAt)}</p>
+            </Section>
+          </TabsContent>
+
+          {/* Stays mounted on the other tabs, so uploads and the list survive a tab switch. */}
+          <TabsContent
+            value="evaluate"
+            forceMount
+            className="pt-2 data-[state=inactive]:hidden"
+          >
+            <EvaluateTab
+              jobId={job.id}
+              active={job.status === "ACTIVE"}
               maxFileSizeMb={settings.maxFileSizeMb}
-              hasSenders={senderCount > 0}
+              usage={
+                monthlyEvalLimit !== null && used !== null
+                  ? { used, limit: monthlyEvalLimit }
+                  : undefined
+              }
+              recent={recent.map(toStatusRow)}
             />
-          </Section>
-          <Section title="Created">
-            <p>{formatDateTime(job.createdAt)}</p>
-          </Section>
-          <Section title="Updated">
-            <p>{formatDateTime(job.updatedAt)}</p>
-          </Section>
-        </TabsContent>
+          </TabsContent>
 
-        {/* Stays mounted on the other tabs, so uploads and the list survive a tab switch. */}
-        <TabsContent
-          value="evaluate"
-          forceMount
-          className="pt-2 data-[state=inactive]:hidden"
-        >
-          <EvaluateTab
-            jobId={job.id}
-            active={job.status === "ACTIVE"}
-            maxFileSizeMb={settings.maxFileSizeMb}
-            usage={
-              monthlyEvalLimit !== null && used !== null
-                ? { used, limit: monthlyEvalLimit }
-                : undefined
-            }
-            recent={recent.map(toStatusRow)}
-          />
-        </TabsContent>
-
-        <TabsContent value="dashboard" className="pt-2">
-          <DashboardTab jobId={job.id} query={query} />
-        </TabsContent>
-      </JobTabs>
+          <TabsContent value="dashboard" className="pt-2">
+            <DashboardTab jobId={job.id} query={query} />
+          </TabsContent>
+        </JobTabs>
+      </JobIntakeProvider>
     </div>
   );
 }

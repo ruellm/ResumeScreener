@@ -32,8 +32,11 @@ export const SUBMISSION_STATUS_LABELS = {
   FAILED: "Failed",
 } as const;
 
+export const SOURCE_LABELS = { WEB: "Web", EMAIL: "Email", DRIVE: "Drive" } as const;
+
 export type SubmissionStatusRow = {
   id: string;
+  source: keyof typeof SOURCE_LABELS;
   status: "RECEIVED" | "QUEUED" | "EXTRACTING" | "EVALUATING" | "DONE" | "FAILED";
   error: string | null;
   originalFilename: string;

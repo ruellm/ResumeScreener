@@ -4,7 +4,14 @@ import { db, isUniqueViolation } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 import { GoogleNotConnectedError } from "@/lib/google/system-auth";
 import { isAllowedSender } from "@/lib/senders";
-import { createStoredSubmission, findDuplicates, limitError } from "@/lib/submission-intake";
+import {
+  discardSubmissions,
+  findDuplicates,
+  limitError,
+  queueSubmissions,
+  stageSubmission,
+  type StagedSubmission,
+} from "@/lib/submission-intake";
 import { log } from "../config";
 import type { Labels, Mailbox, MailMessage } from "./mailbox";
 import {
@@ -32,8 +39,6 @@ type Outcome =
 
 type Fields = Prisma.InboundEmailUpdateManyMutationInput;
 
-type AcceptedFile = { filename: string; bytes: Buffer; sha256: string };
-
 function describe(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -47,18 +52,20 @@ async function readPdf(mailbox: Mailbox, messageId: string, part: PdfPart) {
   return mailbox.getAttachment(messageId, part.attachmentId!);
 }
 
-// Sorts the attached PDFs into files to take and files to skip, each with a reason.
-async function checkFiles(
+// Takes the attached PDFs in one at a time: fetch, check, store, let go. Only
+// one file is in memory at any moment. The stored files are not queued yet.
+async function stageFiles(
   mailbox: Mailbox,
   message: MailMessage,
   parts: PdfPart[],
-  job: { id: string; businessId: string },
+  submission: { jobId: string; businessId: string; senderEmail: string; inboundEmailId: string },
   maxFileSizeMb: number,
+  staged: StagedSubmission[],
+  skipped: SkippedFile[],
 ) {
   const maxBytes = maxFileSizeMb * 1024 * 1024;
   const tooLarge = `The file is larger than ${maxFileSizeMb} MB.`;
-  const skipped: SkippedFile[] = [];
-  const files: AcceptedFile[] = [];
+  const seen = new Set<string>();
   const skip = (part: PdfPart, reason: string) => skipped.push({ filename: part.filename, reason });
 
   for (const [index, part] of parts.entries()) {
@@ -70,6 +77,7 @@ async function checkFiles(
       skip(part, tooLarge);
       continue;
     }
+
     const bytes = await readPdf(mailbox, message.id, part);
     if (bytes.length === 0) skip(part, "The file is empty.");
     else if (bytes.length > maxBytes) skip(part, tooLarge);
@@ -77,28 +85,33 @@ async function checkFiles(
       skip(part, "File is not a valid PDF.");
     } else {
       const sha256 = createHash("sha256").update(bytes).digest("hex");
-      if (files.some((file) => file.sha256 === sha256)) {
+      if (seen.has(sha256)) {
         skip(part, "This file is in the email more than once.");
-      } else {
-        files.push({ filename: part.filename, bytes, sha256 });
+        continue;
+      }
+      seen.add(sha256);
+      const earlier = await findDuplicates(submission.jobId, submission.businessId, [sha256]);
+      if (earlier.has(sha256)) {
+        skip(part, "This resume was already submitted to this job.");
+        continue;
+      }
+      try {
+        staged.push(
+          await stageSubmission({
+            ...submission,
+            source: "EMAIL",
+            originalFilename: part.filename,
+            sha256,
+            bytes,
+            emailMessageId: message.id,
+          }),
+        );
+      } catch (error) {
+        log(`email ${message.id}: ${part.filename} not stored: ${describe(error)}`);
+        skip(part, "The file could not be stored. Send it again.");
       }
     }
   }
-
-  const earlier = await findDuplicates(
-    job.id,
-    job.businessId,
-    files.map((file) => file.sha256),
-  );
-  const fresh = files.filter((file) => {
-    if (!earlier.has(file.sha256)) return true;
-    skipped.push({
-      filename: file.filename,
-      reason: "This resume was already submitted to this job.",
-    });
-    return false;
-  });
-  return { files: fresh, skipped };
 }
 
 // Steps in order; the first one that fails decides. Writes what it learns
@@ -151,45 +164,41 @@ async function decide(
     where: { id: 1 },
     select: { maxFileSizeMb: true },
   });
-  const { files, skipped } = await checkFiles(
-    ctx.mailbox,
-    message,
-    parts,
-    job,
-    settings.maxFileSizeMb,
-  );
+  const staged: StagedSubmission[] = [];
+  const skipped: SkippedFile[] = [];
   fields.skippedJson = skipped as Prisma.InputJsonArray;
 
-  if (files.length > 0) {
-    const batchBytes = files.reduce((sum, file) => sum + file.bytes.length, 0);
-    const overLimit = await limitError(job.business, files.length, batchBytes);
-    if (overLimit) return reject(overLimit, true);
-  }
+  // Whatever was stored is taken back unless the email is accepted.
+  let queued = false;
+  try {
+    await stageFiles(
+      ctx.mailbox,
+      message,
+      parts,
+      { jobId: job.id, businessId: job.businessId, senderEmail: from, inboundEmailId },
+      settings.maxFileSizeMb,
+      staged,
+      skipped,
+    );
 
-  let accepted = 0;
-  for (const file of files) {
-    try {
-      await createStoredSubmission({
-        jobId: job.id,
-        businessId: job.businessId,
-        source: "EMAIL",
-        originalFilename: file.filename,
-        sha256: file.sha256,
-        bytes: file.bytes,
-        senderEmail: from,
-        emailMessageId: message.id,
-        inboundEmailId,
-      });
-      accepted += 1;
-    } catch (error) {
-      log(`email ${message.id}: ${file.filename} not stored: ${describe(error)}`);
-      skipped.push({ filename: file.filename, reason: "The file could not be stored. Send it again." });
+    if (staged.length > 0) {
+      const overLimit = await limitError(
+        job.business,
+        staged.length,
+        staged.reduce((sum, file) => sum + file.sizeBytes, 0),
+        staged.map((file) => file.id),
+      );
+      if (overLimit) return reject(overLimit, true);
     }
-    fields.acceptedCount = accepted;
-  }
+    if (staged.length === 0) return reject(REASONS.noValidPdfs, true);
 
-  if (accepted === 0) return reject(REASONS.noValidPdfs, true);
-  return { status: "accepted" };
+    await queueSubmissions(staged);
+    queued = true;
+    fields.acceptedCount = staged.length;
+    return { status: "accepted" };
+  } finally {
+    if (!queued) await discardSubmissions(staged);
+  }
 }
 
 function labelChange(labels: Labels, status: string) {

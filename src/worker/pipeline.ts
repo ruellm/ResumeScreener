@@ -4,6 +4,7 @@ import { logEvent } from "@/lib/events";
 import { removeResultPdf, storeResultPdf } from "@/lib/result-pdf/store";
 import type { Claim, SubmissionRef } from "./claim";
 import { log, MAX_ATTEMPTS, RETRY_BACKOFF_SECONDS, workerEnv, workerId } from "./config";
+import { writeBackSubmission } from "./drive/write-back";
 import { PermanentError } from "./errors";
 import { evaluate, recordFailedUsage, type EvaluationOutcome } from "./stages/evaluate";
 import { extract } from "./stages/extract";
@@ -99,10 +100,11 @@ async function complete(claim: Claim, outcome: EvaluationOutcome) {
 
 // The result is already saved when this runs. A failure here only means
 // there is no PDF yet, and the download route makes one on demand.
-async function refreshResultPdf(submissionId: string, previousKey: string | null) {
+export async function refreshResultPdf(submissionId: string, previousKey: string | null) {
   try {
-    if (previousKey) await removeResultPdf(previousKey);
-    await storeResultPdf(submissionId);
+    const key = await storeResultPdf(submissionId);
+    // The earlier evaluation's PDF goes once the new one is in place.
+    if (previousKey && previousKey !== key) await removeResultPdf(previousKey);
   } catch (error) {
     log(`${submissionId} result PDF not stored: ${describe(error)}`);
   }
@@ -179,6 +181,7 @@ export async function processSubmission(claim: Claim) {
       const previousPdfKey = await complete(claim, outcome);
       log(`${claim.id} DONE (${outcome.evaluation.verdict}, score ${outcome.evaluation.score})`);
       await refreshResultPdf(claim.id, previousPdfKey);
+      if (submission.source === "DRIVE") await writeBackSubmission(claim.id);
     } catch (error) {
       if (error instanceof LeaseLostError) throw error;
       await handleError(claim, submission, error);

@@ -4,6 +4,7 @@ import type { SubmissionStatusRow } from "@/lib/uploads";
 // One shape for the status route and the Evaluate tab's list.
 export const statusRowSelect = {
   id: true,
+  source: true,
   status: true,
   error: true,
   originalFilename: true,
