@@ -110,11 +110,7 @@ export function LastCheck({ kind }: { kind: "email" | "drive" }) {
 export function WorkerOfflineWarning() {
   const intake = useJobIntake();
   if (!intake || !isWorkerOffline(intake.status.workerSeenAt, intake.now)) return null;
-  return (
-    <Warning>
-      Resumes are not being processed right now. The background worker may not be running.
-    </Warning>
-  );
+  return <Warning>{OFFLINE_TEXT}</Warning>;
 }
 
 export function IntakeActivity() {
