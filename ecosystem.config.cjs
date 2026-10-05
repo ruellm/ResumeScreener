@@ -8,10 +8,11 @@ module.exports = {
       env: { PORT: process.env.PORT || "3100" },
     },
     {
-      name: "screener-worker",
+	  name: "screener-worker",
       cwd: __dirname,
       script: "npm",
       args: "run worker",
+      env: { NODE_OPTIONS: "--experimental-websocket" },
       // The worker waits up to 30s for in-flight work before it exits.
       kill_timeout: 35000,
     },
