@@ -263,3 +263,19 @@ model EventLog {
   @@index([businessId, createdAt])
   @@index([type, createdAt])
 }
+
+// Single row, id is always "system". The mailbox and Drive the app reads from.
+model GoogleConnection {
+  id                    String    @id @default("system")
+  email                 String
+  encryptedRefreshToken String    @db.Text
+  // Space separated, as Google returns them.
+  scopes                String    @db.Text
+  // "ok" or "error"
+  status                String
+  lastError             String?   @db.Text
+  connectedAt           DateTime
+  connectedById         String
+  lastUsedAt            DateTime?
+  updatedAt             DateTime  @updatedAt
+}

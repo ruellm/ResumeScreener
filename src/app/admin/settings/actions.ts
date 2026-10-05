@@ -5,6 +5,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
+import { disconnect, testConnection, type GoogleTestResult } from "@/lib/google/connect";
 import { effectiveRetentionDays, shorteningImpact, type PurgeImpact } from "@/lib/retention";
 import { settingsInputSchema } from "@/lib/settings-schema";
 
@@ -54,4 +55,25 @@ export async function updateSettings(
 
   revalidatePath("/admin/settings");
   return { ok: true };
+}
+
+export async function disconnectGoogle(): Promise<ActionResult> {
+  const admin = await requireSuperAdmin();
+
+  await disconnect(admin.id);
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+export async function testGoogleConnection(): Promise<ActionResult<{ result: GoogleTestResult }>> {
+  await requireSuperAdmin();
+
+  try {
+    return { ok: true, result: await testConnection() };
+  } catch (error) {
+    // A rejected token has just been recorded on the row.
+    revalidatePath("/admin/settings");
+    return { ok: false, error: error instanceof Error ? error.message : "The test failed." };
+  }
 }

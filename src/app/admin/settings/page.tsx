@@ -1,12 +1,31 @@
 import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
+import { GOOGLE_CONNECTION_ID } from "@/lib/google/oauth";
+import { GoogleSection } from "./google-section";
 import { SettingsForm } from "./settings-form";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ google?: string; googleError?: string }>;
+}) {
   await requireSuperAdmin();
 
-  const settings = await db.settings.findUniqueOrThrow({ where: { id: 1 } });
+  const [settings, connection, { google, googleError }] = await Promise.all([
+    db.settings.findUniqueOrThrow({ where: { id: 1 } }),
+    db.googleConnection.findUnique({
+      where: { id: GOOGLE_CONNECTION_ID },
+      select: {
+        email: true,
+        status: true,
+        lastError: true,
+        connectedAt: true,
+        lastUsedAt: true,
+      },
+    }),
+    searchParams,
+  ]);
 
   return (
     <div className="grid gap-6">
@@ -25,6 +44,7 @@ export default async function SettingsPage() {
           Last purge: {settings.lastPurgeAt ? formatDateTime(settings.lastPurgeAt) : "Never"}
         </p>
       </div>
+      <GoogleSection connection={connection} message={google} error={googleError} />
     </div>
   );
 }
