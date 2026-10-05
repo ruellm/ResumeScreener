@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { intakeAddress, intakeMailbox, intakeSubjectCode } from "@/lib/email-intake";
 import { formatDateTime } from "@/lib/format";
 import { statusRowSelect, toStatusRow } from "@/lib/submission-status";
 import { countEvaluationsThisMonth } from "@/lib/usage";
 import { DashboardTab } from "./dashboard-tab";
+import { EmailIntake } from "./email-intake";
 import { EvaluateTab } from "./evaluate-tab";
 import { JobTabs } from "./job-tabs";
 import { StatusButtons } from "./status-buttons";
@@ -50,9 +52,10 @@ export default async function JobPage({
   if (!job) notFound();
 
   const { monthlyEvalLimit } = user.business;
-  const [settings, used, recent] = await Promise.all([
+  const [settings, used, senderCount, recent] = await Promise.all([
     db.settings.findUniqueOrThrow({ where: { id: 1 }, select: { maxFileSizeMb: true } }),
     monthlyEvalLimit === null ? null : countEvaluationsThisMonth(user.business.id),
+    db.allowedSender.count({ where: { businessId: user.business.id } }),
     // RECEIVED rows are uploads that were not confirmed, so they are left out.
     db.submission.findMany({
       where: { jobId: job.id, status: { not: "RECEIVED" } },
@@ -137,6 +140,16 @@ export default async function JobPage({
             ) : (
               <p className="text-muted-foreground">Not set.</p>
             )}
+          </Section>
+          <Section title="Email intake">
+            <EmailIntake
+              accepting={job.status === "ACTIVE"}
+              address={intakeAddress(job.emailAlias)}
+              mailbox={intakeMailbox()}
+              subjectCode={intakeSubjectCode(job.emailAlias)}
+              maxFileSizeMb={settings.maxFileSizeMb}
+              hasSenders={senderCount > 0}
+            />
           </Section>
           <Section title="Created">
             <p>{formatDateTime(job.createdAt)}</p>

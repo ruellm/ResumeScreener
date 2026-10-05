@@ -14,7 +14,14 @@ export default async function NewJobPage() {
   return (
     <div className="grid gap-4">
       <h1 className="text-xl font-semibold">New job</h1>
-      <JobForm skillOptions={skillOptions} />
+      <JobForm
+        skillOptions={skillOptions}
+        emailIntake={
+          <p className="text-sm text-muted-foreground">
+            The email intake address is created when you save.
+          </p>
+        }
+      />
     </div>
   );
 }

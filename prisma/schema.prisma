@@ -96,14 +96,19 @@ model User {
 }
 
 model AllowedSender {
-  id         String   @id @default(cuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  // Stored lowercase.
-  email      String
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  businessId  String
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  // "email" or "domain"
+  kind        String
+  // Normalized. Matching is done on this.
+  value       String
+  // As typed.
+  display     String
+  createdById String
+  createdAt   DateTime @default(now())
 
-  @@unique([businessId, email])
+  @@unique([businessId, kind, value])
 }
 
 model Skill {

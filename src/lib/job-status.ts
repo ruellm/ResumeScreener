@@ -6,8 +6,6 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   ARCHIVED: "Archived",
 };
 
-// The previous status is not stored, so Unarchive goes to Closed
-// and Reopen is a separate, deliberate step.
 export const JOB_STATUS_ACTIONS: Record<JobStatus, { label: string; to: JobStatus }[]> = {
   ACTIVE: [
     { label: "Close", to: "CLOSED" },
@@ -17,5 +15,5 @@ export const JOB_STATUS_ACTIONS: Record<JobStatus, { label: string; to: JobStatu
     { label: "Reopen", to: "ACTIVE" },
     { label: "Archive", to: "ARCHIVED" },
   ],
-  ARCHIVED: [{ label: "Unarchive", to: "CLOSED" }],
+  ARCHIVED: [{ label: "Unarchive", to: "ACTIVE" }],
 };

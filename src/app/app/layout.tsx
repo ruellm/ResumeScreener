@@ -15,6 +15,10 @@ export default async function BusinessLayout({
         href="/app"
         email={user.email}
         businessName={user.business.name}
+        links={[
+          { href: "/app", label: "Jobs" },
+          { href: "/app/settings", label: "Settings" },
+        ]}
       />
       <main className="mx-auto max-w-5xl p-4">{children}</main>
     </>

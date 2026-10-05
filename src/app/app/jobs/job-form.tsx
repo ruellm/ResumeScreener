@@ -29,6 +29,8 @@ type JobFormProps = {
     skills: SelectedSkill[];
     hasSubmissions: boolean;
   };
+  // Shown read-only above the buttons.
+  emailIntake: React.ReactNode;
 };
 
 const TEXT_FIELDS = [
@@ -48,7 +50,7 @@ const TEXT_FIELDS = [
   },
 ] as const;
 
-export function JobForm({ skillOptions, job }: JobFormProps) {
+export function JobForm({ skillOptions, job, emailIntake }: JobFormProps) {
   const [values, setValues] = useState({
     title: job?.title ?? "",
     roleOverview: job?.roleOverview ?? "",
@@ -204,6 +206,11 @@ export function JobForm({ skillOptions, job }: JobFormProps) {
           onChange={(event) => setValue("postUrl", event.target.value)}
         />
         <p className="text-xs text-muted-foreground">Stored for reference.</p>
+      </div>
+
+      <div className="grid gap-2">
+        <p className="text-sm font-medium">Email intake</p>
+        {emailIntake}
       </div>
 
       {error && (

@@ -1,8 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { BusinessForm } from "./business-form";
 import { UsersSection } from "./users-section";
 
@@ -17,7 +25,10 @@ export default async function BusinessPage({
   const [business, settings] = await Promise.all([
     db.business.findUnique({
       where: { id },
-      include: { users: { orderBy: { createdAt: "asc" } } },
+      include: {
+        users: { orderBy: { createdAt: "asc" } },
+        allowedSenders: { orderBy: { createdAt: "asc" } },
+      },
     }),
     db.settings.findUniqueOrThrow({ where: { id: 1 } }),
   ]);
@@ -62,6 +73,32 @@ export default async function BusinessPage({
           lastLogin: user.lastLoginAt ? formatDateTime(user.lastLoginAt) : null,
         }))}
       />
+
+      <section className="grid gap-4">
+        <h2 className="text-lg font-semibold">Allowed senders</h2>
+        {business.allowedSenders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No allowed senders.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Entry</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Added on</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {business.allowedSenders.map((sender) => (
+                <TableRow key={sender.id}>
+                  <TableCell>{sender.display}</TableCell>
+                  <TableCell>{sender.kind === "domain" ? "Domain" : "Email"}</TableCell>
+                  <TableCell>{formatDate(sender.createdAt)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
     </div>
   );
 }
