@@ -7,6 +7,8 @@ import {
   type Claim,
 } from "./claim";
 import { log, workerEnv, workerId } from "./config";
+import { checkEmail, emailTask } from "./email";
+import { failStuckEmails } from "./email/poller";
 import { removeOrphanUploads } from "./orphans";
 import { processSubmission, recordFailure } from "./pipeline";
 import { describePurge, purgeIfDue } from "./purge";
@@ -46,6 +48,7 @@ async function sweep() {
     log(`${submission.id} FAILED: ${LEASE_EXPIRED_ERROR}`);
   }
   await removeOrphanUploads();
+  await failStuckEmails();
 }
 
 // Runs beside the queue so a long purge does not hold up evaluations.
@@ -76,6 +79,7 @@ async function loop() {
     try {
       await sweep();
       checkPurge();
+      checkEmail();
       const claims = await claimSubmissions(free);
       // A signal may arrive while the claim is running. The rows are already
       // claimed, so they are processed and waited for like any other.
@@ -102,14 +106,14 @@ async function main() {
   process.on("SIGTERM", () => onSignal("SIGTERM"));
 
   log(
-    `worker ${workerId} started (concurrency ${workerEnv.WORKER_CONCURRENCY}, poll ${workerEnv.WORKER_POLL_MS}ms, lease ${workerEnv.WORKER_LEASE_SECONDS}s)`,
+    `worker ${workerId} started (concurrency ${workerEnv.WORKER_CONCURRENCY}, poll ${workerEnv.WORKER_POLL_MS}ms, lease ${workerEnv.WORKER_LEASE_SECONDS}s, mail every ${workerEnv.EMAIL_POLL_MS}ms)`,
   );
 
   await loop();
 
   const grace = new AbortController();
   const timedOut = await Promise.race([
-    Promise.all([...inFlight, purgeTask]).then(() => false),
+    Promise.all([...inFlight, purgeTask, emailTask()]).then(() => false),
     sleep(SHUTDOWN_GRACE_MS, true, { signal: grace.signal }).catch(() => false),
   ]);
   grace.abort();

@@ -2,6 +2,7 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 import { GOOGLE_CONNECTION_ID } from "@/lib/google/oauth";
+import { EmailIntakeSection } from "./email-intake-section";
 import { GoogleSection } from "./google-section";
 import { SettingsForm } from "./settings-form";
 
@@ -44,6 +45,11 @@ export default async function SettingsPage({
           Last purge: {settings.lastPurgeAt ? formatDateTime(settings.lastPurgeAt) : "Never"}
         </p>
       </div>
+      <EmailIntakeSection
+        enabled={settings.emailIntakeEnabled}
+        since={settings.emailIntakeSince ? formatDateTime(settings.emailIntakeSince) : null}
+        googleConnected={connection?.status === "ok"}
+      />
       <GoogleSection connection={connection} message={google} error={googleError} />
     </div>
   );

@@ -6,6 +6,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { RESUMES_BUCKET, resumeStorageKey } from "@/lib/storage-keys";
+import { findDuplicates, limitError } from "@/lib/submission-intake";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   fileError,
@@ -14,7 +15,6 @@ import {
   type ConfirmedUpload,
   type PreparedFile,
 } from "@/lib/uploads";
-import { monthlyLimitExceeded } from "@/lib/usage";
 
 const TOO_MANY_FILES = `Upload at most ${MAX_FILES_PER_BATCH} files at a time.`;
 
@@ -37,32 +37,6 @@ const confirmSchema = z.object({
   jobId: z.string().min(1),
   submissionIds: z.array(z.string().min(1)).min(1).max(MAX_FILES_PER_BATCH, TOO_MANY_FILES),
 });
-
-type Business = { id: string; monthlyEvalLimit: number | null; storageLimitMb: number | null };
-
-const MB = 1024 * 1024;
-
-// Both limits reject the whole batch, so nothing is half accepted.
-async function limitError(business: Business, fileCount: number, batchBytes: number) {
-  const over = await monthlyLimitExceeded(business, fileCount);
-  if (over) {
-    return `This batch would exceed your monthly evaluation limit (used ${over.used} of ${over.limit}).`;
-  }
-
-  if (business.storageLimitMb !== null) {
-    const stored = await db.submission.aggregate({
-      where: { businessId: business.id },
-      _sum: { fileSizeBytes: true },
-    });
-    const usedBytes = stored._sum.fileSizeBytes ?? 0;
-    if (usedBytes + batchBytes > business.storageLimitMb * MB) {
-      const usedMb = (usedBytes / MB).toFixed(1);
-      return `This batch would exceed your storage limit (${usedMb} MB of ${business.storageLimitMb} MB used).`;
-    }
-  }
-
-  return null;
-}
 
 export async function prepareUploads(
   input: unknown,
@@ -103,18 +77,7 @@ export async function prepareUploads(
   });
 
   // The hash is the browser's until the worker replaces it with its own.
-  const earlier = await db.submission.findMany({
-    where: {
-      jobId,
-      businessId,
-      sha256: { in: [...inBatch] },
-      status: { not: "FAILED" },
-    },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, sha256: true, createdAt: true },
-  });
-  // Later rows overwrite earlier ones, so the newest wins.
-  const latest = new Map(earlier.map((row) => [row.sha256, row]));
+  const latest = await findDuplicates(jobId, businessId, [...inBatch]);
   files.forEach((file, index) => {
     const existing = latest.get(file.sha256);
     if (results[index] || !existing || file.allowDuplicate) return;

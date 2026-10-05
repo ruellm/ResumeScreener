@@ -54,6 +54,9 @@ model Settings {
   maxFileSizeMb        Int       @default(10)
   evalModel            String
   lastPurgeAt          DateTime?
+  emailIntakeEnabled   Boolean   @default(false)
+  // Mail received before this is never picked up.
+  emailIntakeSince     DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 }
@@ -175,6 +178,8 @@ model Submission {
   senderEmail         String?
   emailMessageId      String?
   driveFileId         String?
+  // The InboundEmail this file arrived with. No foreign key.
+  inboundEmailId      String?
   extractedText       String?           @db.Text
   extractionMethod    ExtractionMethod?
   // Counts and flags about the extraction. No resume content.
@@ -200,6 +205,7 @@ model Submission {
   @@index([jobId, receivedAt])
   @@index([businessId, receivedAt])
   @@index([driveFileId])
+  @@index([inboundEmailId])
   @@index([status, availableAt])
 }
 
@@ -283,4 +289,34 @@ model GoogleConnection {
   connectedById         String
   lastUsedAt            DateTime?
   updatedAt             DateTime  @updatedAt
+}
+
+// One row per message seen in the system mailbox. Inserting the row is the claim.
+model InboundEmail {
+  id              String    @id @default(cuid())
+  gmailMessageId  String    @unique
+  threadId        String
+  rfcMessageId    String?
+  fromAddress     String?
+  subject         String?
+  receivedAt      DateTime
+  businessId      String?
+  jobId           String?
+  // "processing", "accepted", "rejected", "ignored" or "error"
+  status          String
+  reason          String?
+  // Parsed sender check results. No full headers.
+  authSummaryJson Json?
+  pdfCount        Int       @default(0)
+  acceptedCount   Int       @default(0)
+  skippedJson     Json?
+  // Only verified, allowed senders get a reply.
+  replyWanted     Boolean   @default(false)
+  replyAttempts   Int       @default(0)
+  replySentAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([businessId, createdAt])
+  @@index([status, replySentAt])
 }

@@ -16,6 +16,7 @@ const workerSchema = z.object({
   WORKER_POLL_MS: intVar(2000, 100),
   WORKER_LEASE_SECONDS: intVar(300, 1),
   WORKER_STUB_DELAY_MS: intVar(1500, 0),
+  EMAIL_POLL_MS: intVar(60000, 1000),
 });
 
 export const workerEnv = workerSchema.parse(process.env);

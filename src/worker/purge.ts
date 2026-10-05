@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { logEvent } from "@/lib/events";
 import { effectiveRetentionDays, expiredSubmissions, retentionCutoff } from "@/lib/retention";
@@ -22,7 +23,7 @@ export type BusinessPurge = {
   skipped: number;
 };
 
-export type PurgeReport = { businesses: BusinessPurge[]; events: number };
+export type PurgeReport = { businesses: BusinessPurge[]; events: number; emails: number };
 
 // Throws when the objects could not be removed.
 export type RemoveObjects = (bucket: string, keys: string[]) => Promise<void>;
@@ -117,8 +118,8 @@ async function purgeBusiness(
 }
 
 // Deletes finished submissions past their business's retention, with their
-// stored files, and event log rows past the longest retention. Usage records
-// are kept.
+// stored files, inbound email rows of the same age, and event log rows past
+// the longest retention. Usage records are kept.
 export async function purge({
   dryRun,
   removeObjects = removeFromStorage,
@@ -133,7 +134,12 @@ export async function purge({
     }),
   ]);
 
-  const report: PurgeReport = { businesses: [], events: 0 };
+  const report: PurgeReport = { businesses: [], events: 0, emails: 0 };
+  const purgeEmails = async (where: Prisma.InboundEmailWhereInput) => {
+    report.emails += dryRun
+      ? await db.inboundEmail.count({ where })
+      : (await db.inboundEmail.deleteMany({ where })).count;
+  };
   for (const business of businesses) {
     const retentionDays = effectiveRetentionDays(business, settings);
     const where = expiredSubmissions(business.id, retentionDays, now);
@@ -150,6 +156,10 @@ export async function purge({
         meta: { count: submissions, retentionDays },
       });
     }
+    await purgeEmails({
+      businessId: business.id,
+      receivedAt: { lt: retentionCutoff(retentionDays, now) },
+    });
     report.businesses.push({
       businessId: business.id,
       name: business.name,
@@ -158,6 +168,12 @@ export async function purge({
       skipped,
     });
   }
+
+  // Mail that never matched a business is kept for the longest retention.
+  await purgeEmails({
+    businessId: null,
+    receivedAt: { lt: retentionCutoff(settings.maxRetentionDays, now) },
+  });
 
   const oldEvents = { createdAt: { lt: retentionCutoff(settings.maxRetentionDays, now) } };
   report.events = dryRun
@@ -191,7 +207,7 @@ export function describePurge(report: PurgeReport) {
   const skipped = report.businesses.reduce((sum, business) => sum + business.skipped, 0);
   return (
     `${submissions} submission(s) deleted across ${touched.length} business(es), ` +
-    `${report.events} old event(s) deleted` +
+    `${report.events} old event(s) deleted, ${report.emails} old email record(s) deleted` +
     (skipped > 0 ? `, ${skipped} submission(s) kept because a file was not removed` : "")
   );
 }
