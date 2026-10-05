@@ -43,6 +43,8 @@ export default async function SettingsPage({
       />
       <div className="grid gap-1 text-sm text-muted-foreground">
         <p>Evaluation model: {settings.evalModel}</p>
+        <p>Job import model: {settings.importModel}</p>
+        <p>Job imports per business per day: {settings.importDailyLimit}</p>
         <p>
           Last purge: {settings.lastPurgeAt ? formatDateTime(settings.lastPurgeAt) : "Never"}
         </p>

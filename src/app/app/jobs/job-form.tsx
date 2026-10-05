@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import type { ImportedJob } from "@/lib/job-import";
 import { JOB_LIMITS } from "@/lib/job-schema";
 import { cn } from "@/lib/utils";
 import { createJob, updateJob } from "./actions";
+import { JobImport } from "./job-import";
 import { SkillPicker, type SkillOption } from "./skill-picker";
 
 type SelectedSkill = SkillOption & { isRequired: boolean; isActive: boolean };
@@ -50,6 +52,8 @@ const TEXT_FIELDS = [
   },
 ] as const;
 
+const DRAFTED_FIELDS = ["idealCandidateProfile", "passingCriteria"];
+
 export function JobForm({ skillOptions, job, emailIntake }: JobFormProps) {
   const [values, setValues] = useState({
     title: job?.title ?? "",
@@ -62,11 +66,44 @@ export function JobForm({ skillOptions, job, emailIntake }: JobFormProps) {
   const [skills, setSkills] = useState<SelectedSkill[]>(job?.skills ?? []);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState<string>();
+  // The text the form was last filled from. Saved with the job.
+  const [postSnapshot, setPostSnapshot] = useState<string>();
+  // Fields the import drafted and the user has not touched yet.
+  const [drafted, setDrafted] = useState<ReadonlySet<string>>(new Set());
 
   const cancelHref = job ? `/app/jobs/${job.id}` : "/app";
 
   function setValue(name: keyof typeof values, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
+    setDrafted((current) => new Set([...current].filter((field) => field !== name)));
+  }
+
+  // On the edit form there is always something to lose.
+  function confirmReplace() {
+    const hasContent =
+      job !== undefined ||
+      skills.length > 0 ||
+      Object.values(values).some((value) => value.trim() !== "");
+    return (
+      !hasContent || window.confirm("Replace what you've typed with the imported details?")
+    );
+  }
+
+  function applyImport(imported: ImportedJob) {
+    setValues((current) => ({
+      ...imported.fields,
+      postUrl: imported.postUrl ?? current.postUrl,
+    }));
+    setSkills(imported.skills.map((skill) => ({ ...skill, isActive: true })));
+    setPostSnapshot(imported.postSnapshot);
+    setDrafted(new Set(DRAFTED_FIELDS));
+    setError(undefined);
+    setImportNotice(
+      `Imported from ${imported.host ?? "pasted text"}${imported.host ? ` (${imported.source})` : ""}. ` +
+        "Review everything before saving.",
+    );
   }
 
   function toggleSkill(skill: SkillOption) {
@@ -93,6 +130,7 @@ export function JobForm({ skillOptions, job, emailIntake }: JobFormProps) {
     event.preventDefault();
     const payload = {
       ...values,
+      postSnapshot,
       skills: skills.map((skill) => ({ skillId: skill.id, isRequired: skill.isRequired })),
     };
     startTransition(async () => {
@@ -105,127 +143,153 @@ export function JobForm({ skillOptions, job, emailIntake }: JobFormProps) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid max-w-2xl gap-6">
-      {job?.hasSubmissions && (
-        <p className="rounded-lg border bg-muted/50 p-3 text-sm">
-          Changes apply to new evaluations only. Existing results keep the criteria
-          they were scored with.
+    <div className="grid max-w-2xl gap-6">
+      <JobImport
+        busy={importing}
+        onBusy={setImporting}
+        confirmReplace={confirmReplace}
+        onImported={applyImport}
+      />
+      {importNotice && (
+        <p role="status" className="rounded-lg border bg-muted/50 p-3 text-sm">
+          {importNotice}
         </p>
       )}
 
-      <div className="grid gap-2">
-        <Label htmlFor="title">Title</Label>
-        <Input
-          id="title"
-          value={values.title}
-          onChange={(event) => setValue("title", event.target.value)}
-          maxLength={JOB_LIMITS.title}
-          required
-        />
-      </div>
+      <form onSubmit={onSubmit}>
+        <fieldset disabled={importing} className="grid min-w-0 gap-6">
+          <input type="hidden" name="postSnapshot" value={postSnapshot ?? ""} />
+          {job?.hasSubmissions && (
+            <p className="rounded-lg border bg-muted/50 p-3 text-sm">
+              Changes apply to new evaluations only. Existing results keep the criteria
+              they were scored with.
+            </p>
+          )}
 
-      {TEXT_FIELDS.map((field) => {
-        const length = values[field.name].trim().length;
-        const max = JOB_LIMITS[field.name];
-        return (
-          <div key={field.name} className="grid gap-2">
-            <Label htmlFor={field.name}>{field.label}</Label>
-            <Textarea
-              id={field.name}
-              rows={field.rows}
-              value={values[field.name]}
-              onChange={(event) => setValue(field.name, event.target.value)}
-              aria-invalid={length > max}
+          <div className="grid gap-2">
+            <Label htmlFor="title">Title</Label>
+            <Input
+              id="title"
+              value={values.title}
+              onChange={(event) => setValue("title", event.target.value)}
+              maxLength={JOB_LIMITS.title}
               required
             />
-            <div className="flex items-start justify-between gap-4 text-xs text-muted-foreground">
-              <span>{"help" in field ? field.help : ""}</span>
-              <span className={cn("shrink-0 tabular-nums", length > max && "text-destructive")}>
-                {length} / {max}
+          </div>
+
+          {TEXT_FIELDS.map((field) => {
+            const length = values[field.name].trim().length;
+            const max = JOB_LIMITS[field.name];
+            return (
+              <div key={field.name} className="grid gap-2">
+                <Label htmlFor={field.name}>{field.label}</Label>
+                <Textarea
+                  id={field.name}
+                  rows={field.rows}
+                  value={values[field.name]}
+                  onChange={(event) => setValue(field.name, event.target.value)}
+                  aria-invalid={length > max}
+                  required
+                />
+                <div className="flex items-start justify-between gap-4 text-xs text-muted-foreground">
+                  <span>
+                    {drafted.has(field.name) && (
+                      <span className="block font-medium text-foreground">
+                        Drafted from the posting. Review before saving.
+                      </span>
+                    )}
+                    {"help" in field ? field.help : ""}
+                  </span>
+                  <span className={cn("shrink-0 tabular-nums", length > max && "text-destructive")}>
+                    {length} / {max}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="grid gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <Label>Skills</Label>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {skills.length} / {JOB_LIMITS.skills}
               </span>
             </div>
+            {skills.length > 0 && (
+              <ul className="divide-y rounded-lg border">
+                {skills.map((skill) => (
+                  <li key={skill.id} className="flex items-center justify-between gap-4 p-2 text-sm">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="font-medium">{skill.name}</span>
+                      <span className="text-muted-foreground">{skill.category}</span>
+                      {!skill.isActive && <Badge variant="secondary">Inactive</Badge>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`required-${skill.id}`}
+                          checked={skill.isRequired}
+                          onCheckedChange={(checked) => setRequired(skill.id, checked)}
+                        />
+                        <Label htmlFor={`required-${skill.id}`}>Required</Label>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeSkill(skill.id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div>
+              <SkillPicker
+                options={skillOptions}
+                selectedIds={new Set(skills.map((skill) => skill.id))}
+                atLimit={skills.length >= JOB_LIMITS.skills}
+                onToggle={toggleSkill}
+              />
+            </div>
           </div>
-        );
-      })}
 
-      <div className="grid gap-2">
-        <div className="flex items-center justify-between gap-4">
-          <Label>Skills</Label>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {skills.length} / {JOB_LIMITS.skills}
-          </span>
-        </div>
-        {skills.length > 0 && (
-          <ul className="divide-y rounded-lg border">
-            {skills.map((skill) => (
-              <li key={skill.id} className="flex items-center justify-between gap-4 p-2 text-sm">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="font-medium">{skill.name}</span>
-                  <span className="text-muted-foreground">{skill.category}</span>
-                  {!skill.isActive && <Badge variant="secondary">Inactive</Badge>}
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id={`required-${skill.id}`}
-                      checked={skill.isRequired}
-                      onCheckedChange={(checked) => setRequired(skill.id, checked)}
-                    />
-                    <Label htmlFor={`required-${skill.id}`}>Required</Label>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeSkill(skill.id)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div>
-          <SkillPicker
-            options={skillOptions}
-            selectedIds={new Set(skills.map((skill) => skill.id))}
-            atLimit={skills.length >= JOB_LIMITS.skills}
-            onToggle={toggleSkill}
-          />
-        </div>
-      </div>
+          <div className="grid gap-2">
+            <Label htmlFor="postUrl">Job post URL</Label>
+            <Input
+              id="postUrl"
+              type="url"
+              placeholder="https://"
+              value={values.postUrl}
+              onChange={(event) => setValue("postUrl", event.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Stored for reference.</p>
+          </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="postUrl">Job post URL</Label>
-        <Input
-          id="postUrl"
-          type="url"
-          placeholder="https://"
-          value={values.postUrl}
-          onChange={(event) => setValue("postUrl", event.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">Stored for reference.</p>
-      </div>
+          <div className="grid gap-2">
+            <p className="text-sm font-medium">Email intake</p>
+            {/* Alone in its wrapper: React asks an element handed in by a
+                server page for a key as soon as it sits next to siblings. */}
+            <div>{emailIntake}</div>
+          </div>
 
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">Email intake</p>
-        {emailIntake}
-      </div>
-
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Saving..." : job ? "Save changes" : "Create job"}
-        </Button>
-        <Button asChild variant="outline">
-          <Link href={cancelHref}>Cancel</Link>
-        </Button>
-      </div>
-    </form>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving..." : job ? "Save changes" : "Create job"}
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={cancelHref}>Cancel</Link>
+            </Button>
+          </div>
+        </fieldset>
+      </form>
+    </div>
   );
 }

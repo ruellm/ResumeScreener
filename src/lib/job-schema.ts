@@ -7,6 +7,7 @@ export const JOB_LIMITS = {
   idealCandidateProfile: 4000,
   passingCriteria: 3000,
   postUrl: 2000,
+  postSnapshot: 20000,
   skills: 30,
 } as const;
 
@@ -18,7 +19,7 @@ function requiredText(label: string, max: number) {
     .max(max, `${label} must be at most ${max} characters.`);
 }
 
-function isHttpUrl(value: string) {
+export function isHttpUrl(value: string) {
   try {
     const { protocol } = new URL(value);
     return protocol === "http:" || protocol === "https:";
@@ -55,5 +56,9 @@ export const jobInputSchema = z.object({
       .nullable(),
   ),
 });
+
+// Set by an import: the text the form was filled from. Left out, the stored
+// snapshot stays as it is.
+export const postSnapshotSchema = z.string().max(JOB_LIMITS.postSnapshot).nullish();
 
 export type JobInput = z.infer<typeof jobInputSchema>;

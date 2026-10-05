@@ -30,6 +30,6 @@ export async function monthlyLimitExceeded(business: LimitedBusiness, count: num
 // Evaluations that count against Business.monthlyEvalLimit.
 export function countEvaluationsThisMonth(businessId: string) {
   return db.usageRecord.count({
-    where: { businessId, succeeded: true, createdAt: { gte: monthStart() } },
+    where: { businessId, kind: "evaluation", succeeded: true, createdAt: { gte: monthStart() } },
   });
 }

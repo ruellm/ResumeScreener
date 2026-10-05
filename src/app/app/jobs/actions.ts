@@ -10,10 +10,16 @@ import { db, isUniqueViolation } from "@/lib/db";
 import { generateEmailAlias } from "@/lib/email-alias";
 import { logEvent } from "@/lib/events";
 import { syncJobFolder } from "@/lib/google/drive-folders";
-import { jobInputSchema } from "@/lib/job-schema";
+import { jobInputSchema, postSnapshotSchema } from "@/lib/job-schema";
 import { JOB_STATUS_ACTIONS } from "@/lib/job-status";
 
-const updateJobSchema = jobInputSchema.extend({ id: z.string().min(1) });
+const createJobSchema = jobInputSchema.extend({ postSnapshot: postSnapshotSchema });
+const updateJobSchema = createJobSchema.extend({ id: z.string().min(1) });
+
+// What to store about the post the job was imported from.
+function snapshotData(postSnapshot: string | null | undefined) {
+  return postSnapshot ? { postSnapshot, postFetchedAt: new Date() } : {};
+}
 
 const setJobStatusSchema = z.object({
   id: z.string().min(1),
@@ -45,11 +51,11 @@ async function skillSelectionError(skillIds: string[], attachedIds: Set<string>)
 export async function createJob(input: unknown): Promise<ActionResult> {
   const user = await requireBusinessUser();
 
-  const parsed = jobInputSchema.safeParse(input);
+  const parsed = createJobSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
-  const { skills, ...fields } = parsed.data;
+  const { skills, postSnapshot, ...fields } = parsed.data;
 
   const skillError = await skillSelectionError(
     skills.map((skill) => skill.skillId),
@@ -64,6 +70,7 @@ export async function createJob(input: unknown): Promise<ActionResult> {
         const job = await tx.job.create({
           data: {
             ...fields,
+            ...snapshotData(postSnapshot),
             businessId: user.business.id,
             createdById: user.id,
             emailAlias: generateEmailAlias(),
@@ -101,7 +108,7 @@ export async function updateJob(input: unknown): Promise<ActionResult> {
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
-  const { id, skills, ...fields } = parsed.data;
+  const { id, skills, postSnapshot, ...fields } = parsed.data;
 
   const job = await db.job.findFirst({
     where: { id, businessId: user.business.id },
@@ -118,7 +125,7 @@ export async function updateJob(input: unknown): Promise<ActionResult> {
   await db.$transaction(async (tx) => {
     await tx.job.update({
       where: { id, businessId: user.business.id },
-      data: fields,
+      data: { ...fields, ...snapshotData(postSnapshot) },
     });
     await tx.jobSkill.deleteMany({ where: { jobId: id } });
     await tx.jobSkill.createMany({

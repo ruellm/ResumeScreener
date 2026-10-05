@@ -53,6 +53,10 @@ model Settings {
   maxRetentionDays      Int       @default(365)
   maxFileSizeMb         Int       @default(10)
   evalModel             String
+  // The model that reads a job post into the job form.
+  importModel           String    @default("claude-haiku-4-5-20251001")
+  // Imports per business in 24 hours.
+  importDailyLimit      Int       @default(30)
   lastPurgeAt           DateTime?
   emailIntakeEnabled    Boolean   @default(false)
   // Mail received before this is never picked up.
@@ -263,21 +267,24 @@ model Evaluation {
 
 // No foreign keys so rows survive a purge.
 model UsageRecord {
-  id                  String           @id @default(cuid())
+  id                  String            @id @default(cuid())
   businessId          String
-  jobId               String
-  source              SubmissionSource
+  // "evaluation" or "job_import"
+  kind                String            @default("evaluation")
+  // null for job_import rows
+  jobId               String?
+  source              SubmissionSource?
   model               String
   inputTokens         Int
   outputTokens        Int
-  cacheCreationTokens Int              @default(0)
-  cacheReadTokens     Int              @default(0)
-  durationMs          Int              @default(0)
+  cacheCreationTokens Int               @default(0)
+  cacheReadTokens     Int               @default(0)
+  durationMs          Int               @default(0)
   // False when the API was called but the evaluation was not saved.
-  succeeded           Boolean          @default(true)
+  succeeded           Boolean           @default(true)
   verdict             Verdict?
   fileSizeBytes       Int
-  createdAt           DateTime         @default(now())
+  createdAt           DateTime          @default(now())
 
   @@index([businessId, createdAt])
 }
