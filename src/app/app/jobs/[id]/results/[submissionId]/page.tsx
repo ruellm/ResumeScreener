@@ -23,6 +23,7 @@ import {
 } from "@/lib/evaluation-result";
 import { formatDateTime } from "@/lib/format";
 import { requireJob } from "@/lib/job-access";
+import { jobTitleWithCode } from "@/lib/job-code";
 import { buildJobBlock } from "@/lib/job-block";
 import { SUBMISSION_STATUS_LABELS } from "@/lib/uploads";
 import { DeleteSubmissionButton } from "../../delete-submission-button";
@@ -88,7 +89,7 @@ export default async function ResultPage({
       href={`/app/jobs/${job.id}?tab=evaluate`}
       className="text-sm text-muted-foreground underline-offset-4 hover:underline"
     >
-      Back to {job.title}
+      Back to {jobTitleWithCode(job)}
     </Link>
   );
 

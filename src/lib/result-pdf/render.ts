@@ -28,6 +28,8 @@ export type ResultPdfInput = {
     | "preRejectionScore"
   >;
   submission: Pick<Submission, "originalFilename" | "hiddenTextFlagsJson">;
+  // Shown after the job title, as "Title (JOB-XXXXXXXX)".
+  jobCode: string;
   generatedAt: Date;
 };
 
@@ -165,6 +167,7 @@ function footers(doc: Doc, filename: string) {
 export function renderResultPdf({
   evaluation,
   submission,
+  jobCode,
   generatedAt,
 }: ResultPdfInput): Promise<Buffer> {
   const result = parseEvaluationResult(evaluation.resultJson);
@@ -185,7 +188,7 @@ export function renderResultPdf({
 
     doc.font(BOLD).fontSize(18).text("Resume Screening Result");
     doc.font(REGULAR).fontSize(11);
-    if (snapshot.title) doc.text(snapshot.title);
+    doc.text(snapshot.title ? `${snapshot.title} (${jobCode})` : jobCode);
     doc.fontSize(9).text(`Generated ${dateFormat.format(generatedAt)} UTC`);
 
     const { rejectedForManipulation: rejected } = evaluation;

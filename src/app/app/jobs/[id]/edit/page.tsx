@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { intakeAddress, intakeMailbox, intakeSubjectCode } from "@/lib/email-intake";
+import { intakeAddress, intakeMailbox } from "@/lib/email-intake";
+import { jobCode } from "@/lib/job-code";
 import { JobForm } from "../../job-form";
 import { EmailIntake } from "../email-intake";
 
@@ -65,7 +66,7 @@ export default async function EditJobPage({
             accepting={job.status === "ACTIVE"}
             address={intakeAddress(job.emailAlias)}
             mailbox={intakeMailbox()}
-            subjectCode={intakeSubjectCode(job.emailAlias)}
+            subjectCode={jobCode(job.emailAlias)}
             maxFileSizeMb={settings.maxFileSizeMb}
             hasSenders={senderCount > 0}
           />

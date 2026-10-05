@@ -2,6 +2,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env.server";
 import { VERDICT_LABELS } from "@/lib/evaluation-result";
+import { jobTitleWithCode } from "@/lib/job-code";
 import { loadResultPdf } from "@/lib/result-pdf/store";
 import { log } from "../config";
 import type { Mailbox } from "./mailbox";
@@ -97,13 +98,21 @@ type Row = {
   skippedJson: unknown;
 };
 
+// "Title (JOB-XXXXXXXX)", so the sender can tell which job a reply is about.
+async function jobLabel(jobId: string | null) {
+  if (!jobId) return null;
+  const job = await db.job.findUnique({
+    where: { id: jobId },
+    select: { title: true, emailAlias: true },
+  });
+  return job ? jobTitleWithCode(job) : null;
+}
+
 // Null when there is nothing left to report, for example because every
 // submission was deleted in the meantime.
 async function resultsBody(row: Row): Promise<Body | null> {
   const [job, submissions] = await Promise.all([
-    row.jobId
-      ? db.job.findUnique({ where: { id: row.jobId }, select: { title: true } })
-      : null,
+    jobLabel(row.jobId),
     db.submission.findMany({
       where: { inboundEmailId: row.id },
       orderBy: { createdAt: "asc" },
@@ -120,7 +129,7 @@ async function resultsBody(row: Row): Promise<Body | null> {
   );
   const failed = submissions.filter((submission) => submission.status === "FAILED");
 
-  const lines: Line[] = [{ kind: "heading", text: `Results for ${job?.title ?? "your job"}` }];
+  const lines: Line[] = [{ kind: "heading", text: `Results for ${job ?? "your job"}` }];
   for (const submission of done) {
     const { evaluation } = submission;
     lines.push(
@@ -177,12 +186,15 @@ async function resultsBody(row: Row): Promise<Body | null> {
   return { lines, attachments };
 }
 
-function errorBody(row: Row): Body {
+async function errorBody(row: Row): Promise<Body> {
+  const job = await jobLabel(row.jobId);
+  const lines: Line[] = job ? [{ kind: "heading", text: job }, gap] : [];
   if (row.reason === REASONS.jobClosed) {
-    return { lines: [text("This job is not accepting resumes.")], attachments: [] };
+    lines.push(text("This job is not accepting resumes."));
+    return { lines, attachments: [] };
   }
 
-  const lines: Line[] = [text("Your email could not be processed.")];
+  lines.push(text("Your email could not be processed."));
   if (row.reason === REASONS.noPdfs) {
     lines.push(text("No PDF attachments were found. Attach the resumes as PDF files and send again."));
   } else if (row.reason === REASONS.noValidPdfs) {
@@ -224,7 +236,7 @@ export async function sendReply(mailbox: Mailbox, inboundEmailId: string) {
   const row = await db.inboundEmail.findUniqueOrThrow({ where: { id: inboundEmailId } });
   try {
     if (!row.fromAddress) throw new Error("No sender address.");
-    const body = row.status === "accepted" ? await resultsBody(row) : errorBody(row);
+    const body = row.status === "accepted" ? await resultsBody(row) : await errorBody(row);
     if (!body) {
       await db.inboundEmail.update({ where: { id: row.id }, data: { replyWanted: false } });
       return;

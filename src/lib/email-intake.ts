@@ -10,7 +10,3 @@ export function intakeAddress(emailAlias: string) {
   const at = mailbox.lastIndexOf("@");
   return `${mailbox.slice(0, at)}+${emailAlias.toLowerCase()}${mailbox.slice(at)}`;
 }
-
-export function intakeSubjectCode(emailAlias: string) {
-  return `JOB-${emailAlias.toUpperCase()}`;
-}

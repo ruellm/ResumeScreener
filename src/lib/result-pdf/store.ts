@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { jobCode } from "@/lib/job-code";
 import { RESULTS_BUCKET, resultPdfStorageKey } from "@/lib/storage-keys";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { renderResultPdf } from "./render";
@@ -7,12 +8,17 @@ import { renderResultPdf } from "./render";
 async function renderCurrent(submissionId: string) {
   const submission = await db.submission.findUniqueOrThrow({
     where: { id: submissionId },
-    include: { evaluation: true },
+    include: { evaluation: true, job: { select: { emailAlias: true } } },
   });
   const { evaluation } = submission;
   if (!evaluation) throw new Error(`Submission ${submissionId} has no evaluation.`);
 
-  const pdf = await renderResultPdf({ evaluation, submission, generatedAt: new Date() });
+  const pdf = await renderResultPdf({
+    evaluation,
+    submission,
+    jobCode: jobCode(submission.job.emailAlias),
+    generatedAt: new Date(),
+  });
   return { submission, evaluation, pdf };
 }
 

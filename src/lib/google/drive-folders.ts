@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { jobTitleWithCode } from "@/lib/job-code";
 import { getDrive, type DriveClient } from "./drive";
 import { GoogleNotConnectedError } from "./system-auth";
 
@@ -9,7 +10,7 @@ type BusinessRef = { id: string; name: string; driveFolderId: string | null };
 type JobRef = { id: string; title: string; emailAlias: string; driveFolderId: string | null };
 
 export function jobFolderName(job: Pick<JobRef, "title" | "emailAlias">) {
-  return `${job.title} (JOB-${job.emailAlias.toUpperCase()})`;
+  return jobTitleWithCode(job);
 }
 
 function describe(error: unknown) {

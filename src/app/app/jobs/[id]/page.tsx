@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { JobCode } from "@/components/job-code";
 import { JobStatusBadge } from "@/components/job-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireBusinessUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { intakeAddress, intakeMailbox, intakeSubjectCode } from "@/lib/email-intake";
+import { intakeAddress, intakeMailbox } from "@/lib/email-intake";
 import { folderUrl } from "@/lib/google/drive";
 import { formatDateTime } from "@/lib/format";
 import { jobIntakeActivity } from "@/lib/intake-activity";
+import { jobCode } from "@/lib/job-code";
 import { heartbeatSelect, toIntakeStatus } from "@/lib/intake-status";
 import { statusRowSelect, toStatusRow } from "@/lib/submission-status";
 import { countEvaluationsThisMonth } from "@/lib/usage";
@@ -84,8 +86,9 @@ export default async function JobPage({
           Back to jobs
         </Link>
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold">{job.title}</h1>
+            <JobCode emailAlias={job.emailAlias} badge />
             <JobStatusBadge status={job.status} />
           </div>
           <div className="flex gap-2">
@@ -162,7 +165,7 @@ export default async function JobPage({
                 accepting={job.status === "ACTIVE"}
                 address={intakeAddress(job.emailAlias)}
                 mailbox={intakeMailbox()}
-                subjectCode={intakeSubjectCode(job.emailAlias)}
+                subjectCode={jobCode(job.emailAlias)}
                 maxFileSizeMb={settings.maxFileSizeMb}
                 hasSenders={senderCount > 0}
               />
